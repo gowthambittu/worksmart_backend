@@ -1,7 +1,7 @@
 from flask import Blueprint, request, make_response, jsonify
 from flask.views import MethodView
 from . import bcrypt, db,app
-from flaskr.models import User,BlacklistToken
+from flaskr.models import User,BlacklistToken,UserActivity
 import os
 import jwt
 import re
@@ -30,7 +30,6 @@ class RegisterAPI(MethodView):
                 user = User(
                     email=post_data.get('email'),
                     password=post_data.get('password'),
-                    username=post_data.get('username'),
                     role=post_data.get('role')
                 )
                 app.logger.info(user)
@@ -45,6 +44,9 @@ class RegisterAPI(MethodView):
                     'message': 'Successfully registered.',
                     'auth_token': auth_token
                 }
+                email = post_data.get('email')
+                user_activity = UserActivity(user.user_id, f'User {email} is registered','POST',)
+                user_activity.log_activity()
                 return make_response(jsonify(responseObject)), 201
             except Exception as e:
                 app.logger.error(e)
@@ -76,17 +78,21 @@ class LoginAPI(MethodView):
                 user.password, post_data.get('password')
             ):
                 auth_token = user.encode_auth_token(user.user_id)
+                user_role = user.role
                 if auth_token:
                     responseObject = {
                         'status': 'success',
                         'message': 'Successfully logged in.',
-                        'auth_token': auth_token
+                        'auth_token': auth_token,
+                        'user_role': user_role
                     }
+                    user_activity = UserActivity(user.user_id, f'User {user.email} is logged in','POST',)
+                    user_activity.log_activity()
                     return make_response(jsonify(responseObject)), 200
             else:
                 responseObject = {
                     'status': 'fail',
-                    'message': 'User does not exist.'
+                    'message': 'Invalid credentials'
                 }
                 return make_response(jsonify(responseObject)), 404
         except Exception as e:
@@ -106,6 +112,7 @@ class UserAPI(MethodView):
         self.auth_token = self.auth_header.split(" ")[1] if self.auth_header else ''
         self.current_user_id = User.decode_auth_token(self.auth_token)
         self.current_user = User.query.filter_by(user_id=self.current_user_id).first()
+    
     def _authenticate_user(self):
         try:
             user_id = User.decode_auth_token(self.auth_token)
@@ -141,6 +148,15 @@ class UserAPI(MethodView):
                         'user_id': user.user_id,
                         'email': user.email,
                         'role': user.role,
+                        'full_name': user.full_name,
+                        'has_work': user.has_work,
+                        'has_work': user.has_work,
+                        'phone_number': user.phone_number,
+                        'registration_date': user.registration_date,
+                        'last_login': user.last_login,
+                        'is_verified': user.is_verified,
+                        'is_admin': user.is_admin,
+                        'updated_on': user.updated_at,
                         'registered_on': user.registration_date
                     }
                 }
@@ -167,6 +183,14 @@ class UserAPI(MethodView):
                     'user_id': user.user_id,
                     'email': user.email,
                     'role': user.role,
+                    'full_name': user.full_name,
+                    'has_work': user.has_work,
+                    'phone_number': user.phone_number,
+                    'registration_date': user.registration_date,
+                    'last_login': user.last_login,
+                    'is_verified': user.is_verified,
+                    'is_admin': user.is_admin,
+                    'updated_on': user.updated_at,
                     'registered_on': user.registration_date
                 }
                 user_list.append(user_data)

@@ -1,12 +1,15 @@
 from flask import Blueprint, request, make_response, jsonify
 from flask.views import MethodView
 from . import bcrypt, db,app
-from flaskr.models import User,BlacklistToken,Property,WorkOrder
+from flaskr.models import User,BlacklistToken,Property,WorkOrder,WorkRecord
 import os
 import jwt
 import re
 from datetime import datetime
-from flaskr.schemas import PropertySchema, WorkOrderSchema
+from flaskr.schemas import PropertySchema, WorkOrderSchema,WorkRecordSchema
+from flask import send_file
+import mimetypes
+import base64
 
 property_blueprint=Blueprint("property",__name__)
 
@@ -115,7 +118,21 @@ class PropertyAPI(MethodView):
                     work_orders = WorkOrder.query.filter_by(property_id=property_id).all()
                     work_order_schema=WorkOrderSchema(many=True)
                     work_orders = work_order_schema.dump(work_orders)
-                    
+                    # Add work_records to each work_order
+                    for work_order in work_orders:
+                        work_records = WorkRecord.query.filter_by(work_order_id=work_order['work_order_id']).all()
+                        work_record_schema = WorkRecordSchema(many=True)
+                        work_records = work_record_schema.dump(work_records)
+                        for work_record in work_records:
+                            try:
+                                with open(work_record['proof_of_work_file_path'], 'rb') as image_file:
+                                    encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+                                work_record['proof_of_work_file_path'] = encoded_string
+                            except FileNotFoundError:
+                                work_record['proof_of_work_file_path'] = None
+
+                        work_order['work_records'] = work_records
+                        
                     responseObject = {
                                         'status': 'success',
                                         'data': [{'property':property,'work_orders': [work_orders]}]
@@ -125,8 +142,24 @@ class PropertyAPI(MethodView):
                     property_schema = PropertySchema()
                     work_order_schema=WorkOrderSchema(many=True)  
                     if not property_id:  
-                        current_work_orders = WorkOrder.query.filter_by(user_id=self.current_user_id).filter_by(is_completed=False).all()
+                        current_work_orders = db.session.query(WorkOrder.work_order_id,
+                                                    WorkOrder.property_id,
+                                                    WorkOrder.user_id,
+                                                    WorkOrder.assigned_date,
+                                                    WorkOrder.is_completed,
+                                                    WorkOrder.total_work_done,
+                                                    WorkOrder.update_date,
+                                                    WorkOrder.total_earnings,
+                                                    Property.property_name,
+                                                    Property.location).\
+                                    outerjoin(Property, WorkOrder.property_id == Property.property_id).\
+                                    outerjoin(User, WorkOrder.user_id == User.user_id).\
+                                    filter(WorkOrder.user_id == self.current_user_id, WorkOrder.is_completed == False).\
+                                    all()
+                        #WorkOrder.query.filter_by(user_id=self.current_user_id).filter_by(is_completed=False).all()
+                        #print(str(current_work_orders.statement))
                         current_work_orders =work_order_schema.dump(current_work_orders)
+                        print(current_work_orders)
                         previous_work_orders = WorkOrder.query.filter_by(user_id=self.current_user_id).filter_by(is_completed=True).all()
                         previous_work_orders=work_order_schema.dump(previous_work_orders)
                         responseObject = {

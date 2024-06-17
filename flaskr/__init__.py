@@ -15,7 +15,7 @@ load_dotenv()
 # def create_app(test_config=None):
 #     # create and configure the app
 app = Flask(__name__)
-CORS(app)
+CORS(app, origins="http://localhost:3000")
 db_password = quote(os.getenv('MYSQL_PASSWORD'))
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('SQLALCHEMY_DATABASE_URI').format(db_password)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False

@@ -1,0 +1,3 @@
+App start :   flask --app flaskr run --debug --port 8080
+
+virtual env activation: source .venv/bin/activate

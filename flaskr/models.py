@@ -181,7 +181,7 @@ class WorkOrder(db.Model):
     
     work_order_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     property_id = db.Column(db.Integer, db.ForeignKey('properties.property_id'), nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.user_id'), nullable=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.user_id'), nullable=False)
     assigned_date = db.Column(db.DateTime, nullable=True)
     is_completed = db.Column(db.Boolean, default=False)
     total_work_done = db.Column(db.Float, nullable=True)
@@ -201,6 +201,7 @@ class WorkRecord(db.Model):
     work_done_tons = db.Column(db.Float, nullable=True)
     proof_of_work_file_path = db.Column(db.String(255), nullable=True)
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+    update_date = db.Column(db.DateTime, default=db.func.current_timestamp(), onupdate=db.func.current_timestamp())
     is_verified = db.Column(db.Boolean, default=False)
     #total_earnings= db.Column(db.Float,default=0,nullable=True)
 
@@ -218,3 +219,13 @@ class UserActivity(db.Model):
 
     # Define relationship with users table
     # user = db.relationship('User', backref=db.backref('useractivity',lazy=True))
+    def __init__(self, user_id,description, activity_type):
+        self.user_id = user_id
+        self.activity_type = activity_type
+        self.activity_description=description
+    def log_activity(self):
+        # Add the instance to the database session
+        db.session.add(self)
+
+        # Commit the changes to the database
+        db.session.commit()
