@@ -186,7 +186,9 @@ class WorkOrder(db.Model):
     is_completed = db.Column(db.Boolean, default=False)
     total_work_done = db.Column(db.Float, nullable=True)
     update_date = db.Column(db.DateTime, default=db.func.current_timestamp(), onupdate=db.func.current_timestamp())
+    paid_out = db.Column(db.Float, nullable=True)
     total_earnings = db.Column(db.Float, default=0)
+    
     # Define relationships with other tables
     property = db.relationship('Property', backref=db.backref('work_orders', lazy=True,uselist=False))
     user = db.relationship('User',primaryjoin='WorkOrder.user_id == User.user_id', backref=db.backref('work_orders', lazy=True))
@@ -208,7 +210,23 @@ class WorkRecord(db.Model):
     # Define relationship with work_orders table
     #work_order = db.relationship('WorkOrder',backref=db.backref('work_records',lazy=True))
 
+class OutboundRecord(db.Model):
+    __tablename__ = 'outbound_records'
+
+    outbound_id = db.Column(db.Integer, primary_key=True)
+    truck_number = db.Column(db.String(50), nullable=False)
+    truck_date = db.Column(db.DateTime, nullable=True)
+    weight_in_tons = db.Column(db.Numeric(10, 2), nullable=False) # weight in tons
+    receipt_proof = db.Column(db.String(255), nullable=True)
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+    created_id= db.Column(db.Integer, db.ForeignKey('users.user_id'), nullable=False)
+    update_date = db.Column(db.DateTime, default=db.func.current_timestamp(), onupdate=db.func.current_timestamp())
+    is_verified = db.Column(db.Boolean, default=False)
+
+
+
 class UserActivity(db.Model):
+
     __tablename__ = 'useractivity'
 
     activity_id = db.Column(db.Integer, primary_key=True, autoincrement=True)

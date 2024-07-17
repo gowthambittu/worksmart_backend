@@ -92,7 +92,6 @@ class WorkRecordAPI(MethodView):
                     return make_response(jsonify(responseObject)), 400
                 if work_record_id and self.is_admin:
                     work_record = WorkRecord.query.filter_by(record_id=work_record_id).first()
-                    print(work_record)
                     if not work_record:
                         responseObject = {
                                 'status': 'error',
@@ -106,14 +105,23 @@ class WorkRecordAPI(MethodView):
                         if is_verified:
                             work_order = WorkOrder.query.filter_by(work_order_id=work_record.work_order_id).first()
                             property = Property.query.filter_by(property_id=work_order.property_id).first()
-                            pay_rate = property.cost_to_labour if self.current_user_role == 'labour' else property.cost_to_driver
+                            user = User.query.filter_by(user_id=work_order.user_id).first()
+                            print(user.role)
+                            pay_rate = property.cost_to_labour if user.role == 'labour' else property.cost_to_driver
                             if work_order:
+                                if(data.get('work_done') > 0):
                                 # Assuming you have some values to update total_earnings and total_work_done
-                                work_order.total_work_done += data.get('work_done')  # Update with your logic
-                                print(work_order.total_work_done)
-                                work_order.total_earnings = (work_order.total_work_done*pay_rate)  # Update with your logic
-                                property.completed_work+= data.get('work_done')
-                                db.session.commit()
+                                    work_order.total_work_done += data.get('work_done')  # Update with your logic
+                                    print(work_order.total_work_done)
+                                    work_order.total_earnings = (work_order.total_work_done*pay_rate)  # Update with your logic
+                                    property.completed_work+= data.get('work_done')
+                                    db.session.commit()
+                                else:
+                                    if work_order.paid_out is None:
+                                        work_order.paid_out = data.get('work_done')
+                                    else:
+                                        work_order.paid_out += data.get('work_done')
+                                    db.session.commit()
                         responseObject = {
                         'status': 'success',
                         'message': f'Work Record {work_record_id} updated successfully'

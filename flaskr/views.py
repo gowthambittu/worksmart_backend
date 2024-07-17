@@ -211,11 +211,14 @@ class UserAPI(MethodView):
             return make_response(jsonify(responseObject)), 403
 
         try:
+
             data = request.get_json()
+            print(data)
             email = data.get('email')
             password = data.get('password')
+            full_name = data.get('full_name')
+            phone_number = data.get('phone_number')
             role = data.get('role', 'labour')  # Default role if not provided
-
             # Validate required fields
             if not email or not password:
                 responseObject = {
@@ -233,7 +236,8 @@ class UserAPI(MethodView):
                 return make_response(jsonify(responseObject)), 400
 
             # Create new user
-            new_user = User(email=email, password=password, role=role)
+            new_user = User(email=email, password=password, 
+                            role=role,full_name=full_name,phone_number=phone_number)
             db.session.add(new_user)
             db.session.commit()
             self.auth_token= self.current_user.encode_auth_token(self.current_user_id)
@@ -263,7 +267,10 @@ class UserAPI(MethodView):
             data = request.get_json()
             email = data.get('email')
             role = data.get('role', 'labour')  # Default role if not provided
+            phone_number = data.get('phone_number')
+            full_name = data.get('full_name')
             has_work= data.get('has_work')
+            print('has_work',has_work)
             # Validate email format
             if email and not self._validate_email(email):
                 responseObject = {
@@ -284,7 +291,9 @@ class UserAPI(MethodView):
             # Update user details
             user.email = email if email else user.email
             user.role = role if role else user.role
-            user.has_work = has_work if has_work else user.has_work
+            user.phone_number = phone_number if phone_number else user.phone_number
+            user.full_name = full_name if full_name else user.full_name
+            user.has_work = has_work 
             db.session.commit()
             self.auth_token= self.current_user.encode_auth_token(self.current_user_id)
             responseObject = {

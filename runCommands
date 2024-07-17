@@ -1,3 +1,7 @@
 App start :   flask --app flaskr run --debug --port 8080
 
 virtual env activation: source .venv/bin/activate
+
+flask --app flaskr db migrate -m "new table for outbound transactions"
+
+flask --app flaskr db upgrade 

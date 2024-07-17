@@ -10,6 +10,7 @@ from flaskr.schemas import PropertySchema, WorkOrderSchema,WorkRecordSchema
 from flask import send_file
 import mimetypes
 import base64
+from sqlalchemy.orm import joinedload
 
 property_blueprint=Blueprint("property",__name__)
 
@@ -115,11 +116,13 @@ class PropertyAPI(MethodView):
                     property = Property.query.filter_by(property_id=property_id).first()
                     property_schema = PropertySchema()
                     property = property_schema.dump(property)
-                    work_orders = WorkOrder.query.filter_by(property_id=property_id).all()
+                    #work_orders = WorkOrder.query.filter_by(property_id=property_id).all()
+                    work_orders = WorkOrder.query.options(joinedload(WorkOrder.user)).filter_by(property_id=property_id).all()
                     work_order_schema=WorkOrderSchema(many=True)
                     work_orders = work_order_schema.dump(work_orders)
                     # Add work_records to each work_order
                     for work_order in work_orders:
+                        #print(work_order['user_full_name'])
                         work_records = WorkRecord.query.filter_by(work_order_id=work_order['work_order_id']).all()
                         work_record_schema = WorkRecordSchema(many=True)
                         work_records = work_record_schema.dump(work_records)
