@@ -111,10 +111,10 @@ class WorkRecordAPI(MethodView):
                             if work_order:
                                 if(data.get('work_done') > 0):
                                 # Assuming you have some values to update total_earnings and total_work_done
-                                    work_order.total_work_done += data.get('work_done')  # Update with your logic
+                                    work_order.total_work_done += data.get('work_done')  
                                     print(work_order.total_work_done)
                                     work_order.total_earnings = (work_order.total_work_done*pay_rate)  # Update with your logic
-                                    property.completed_work+= data.get('work_done')
+                                    property.completed_work+= data.get('work_done') if user.role == 'labour' else 0
                                     db.session.commit()
                                 else:
                                     if work_order.paid_out is None:
