@@ -80,7 +80,8 @@ class User(db.Model):
             payload = {
                 'exp': expiration,
                 'iat': issued_at,
-                'sub': user_id,
+                # JWT subject should be a string for broad compatibility.
+                'sub': str(user_id),
             }
             
             # Encode the token using the correct timezone
@@ -98,22 +99,18 @@ class User(db.Model):
         :return: integer|string
         """
         try:
-            # Decode the token using the secret key and UTC timezone
-            payload = jwt.decode(auth_token, os.getenv('SECRET_KEY'), algorithms=['HS256'], options={'verify_exp': False})
+            # Decode and validate signature + expiry using the secret key.
+            payload = jwt.decode(auth_token, os.getenv('SECRET_KEY'), algorithms=['HS256'])
             is_blacklisted_token = BlacklistToken.check_blacklist(auth_token)
             if is_blacklisted_token:
                 return 'Token blacklisted. Please log in again.'
-            # Convert the UNIX timestamp (payload['exp']) to a datetime object in UTC timezone
-            exp_time_utc = datetime.datetime.fromtimestamp(payload['exp'], tz=pytz.utc)
-
-            # Convert the UNIX timestamp to local time
-            local_now = datetime.datetime.now(pytz.timezone('America/New_York'))  # Replace 'America/New_York' with your actual timezone
-
-            # Check token expiration against local time
-            if exp_time_utc < local_now:
-                return 'Token expired. Please log in again.'
-            else:
-                return payload['sub']
+            subject = payload.get('sub')
+            if subject is None:
+                return 'Invalid token. Please log in again.'
+            try:
+                return int(subject)
+            except (TypeError, ValueError):
+                return 'Invalid token. Please log in again.'
         except jwt.ExpiredSignatureError:
             return 'Signature expired. Please log in again.'
         except jwt.InvalidTokenError:

@@ -14,6 +14,40 @@ from sqlalchemy.orm import joinedload
 
 property_blueprint=Blueprint("property",__name__)
 
+
+def _parse_assignment_ids(data):
+    assigned_labour_id = data.get('assigned_labour_id')
+    assigned_driver_id = data.get('assigned_driver_id')
+    if assigned_labour_id is None or assigned_driver_id is None:
+        return None, None, ('assigned_labour_id and assigned_driver_id are required.', 400)
+
+    try:
+        assigned_labour_id = int(assigned_labour_id)
+        assigned_driver_id = int(assigned_driver_id)
+    except (TypeError, ValueError):
+        return None, None, ('assigned_labour_id and assigned_driver_id must be valid user IDs.', 400)
+
+    if assigned_labour_id == assigned_driver_id:
+        return None, None, ('assigned_labour_id and assigned_driver_id must be different users.', 400)
+
+    return assigned_labour_id, assigned_driver_id, None
+
+
+def _validate_assignment_users(assigned_labour_id, assigned_driver_id):
+    labour_user = User.query.filter_by(user_id=assigned_labour_id).first()
+    driver_user = User.query.filter_by(user_id=assigned_driver_id).first()
+
+    if not labour_user:
+        return None, None, ('Assigned labour user not found.', 404)
+    if not driver_user:
+        return None, None, ('Assigned driver user not found.', 404)
+    if labour_user.role != 'labour':
+        return None, None, ('assigned_labour_id must belong to a labour user.', 400)
+    if driver_user.role != 'driver':
+        return None, None, ('assigned_driver_id must belong to a driver user.', 400)
+
+    return labour_user, driver_user, None
+
 class PropertyAPI(MethodView):
     def __init__(self):
         try:
@@ -40,7 +74,7 @@ class PropertyAPI(MethodView):
                 return make_response(jsonify(responseObject)), 403
             
             else:
-                data=request.get_json()
+                data=request.get_json() or {}
                 property_in_db = Property.query.filter_by(property_name=data.get('property_name')).first()
                 if not property_in_db:
                     property_name = data.get('property_name')
@@ -51,32 +85,52 @@ class PropertyAPI(MethodView):
                     purchase_date_obj = datetime.strptime(purchase_date_str, "%m-%d-%Y")
                     location= data.get('location')
                     admin_created_by= self.current_user_id
-                    assigned_to= data.get('assigne_labour')
                     cost_to_labour=data.get('cost_to_labour')
                     cost_to_driver=data.get('cost_to_driver')
+
+                    assigned_labour_id, assigned_driver_id, parse_error = _parse_assignment_ids(data)
+                    if parse_error:
+                        responseObject = {'status': 'fail', 'message': parse_error[0]}
+                        return make_response(jsonify(responseObject)), parse_error[1]
+
+                    labour_user, driver_user, user_error = _validate_assignment_users(
+                        assigned_labour_id, assigned_driver_id
+                    )
+                    if user_error:
+                        responseObject = {'status': 'fail', 'message': user_error[0]}
+                        return make_response(jsonify(responseObject)), user_error[1]
+
                     property = Property(property_name=property_name,admin_created_by=admin_created_by,estimated_work=estimated_work,
                                         purchase_cost=purchase_cost,land_area_acres=land_area_acres,
                                         purchase_date=purchase_date_obj,location=location,
                                         cost_to_driver=cost_to_driver,cost_to_labour=cost_to_labour,
                                         completed_work=0)
-                    # Add the property object to the session and commit the transaction
                     db.session.add(property)
-                    db.session.commit()  # Commit the transaction here
+                    db.session.flush()
                     property_id = property.property_id
-                    for user in set(assigned_to):
-                        work_order = WorkOrder(property_id=property_id, user_id=user,
-                                            assigned_date=datetime.now(), is_completed=False,
-                                            total_work_done=0, total_earnings=0)
-                        user = User.query.filter_by(user_id=user).first()
-                        user.has_work=True
-                        user.updated_at = datetime.now()
-                        db.session.add(user)
+
+                    created_work_orders = []
+                    for assigned_user in (labour_user, driver_user):
+                        work_order = WorkOrder(
+                            property_id=property_id,
+                            user_id=assigned_user.user_id,
+                            assigned_date=datetime.now(),
+                            is_completed=False,
+                            total_work_done=0,
+                            total_earnings=0
+                        )
+                        assigned_user.has_work = True
+                        assigned_user.updated_at = datetime.now()
                         db.session.add(work_order)
-                    db.session.commit()  # Commit the outer transaction here
+                        created_work_orders.append(work_order)
+
+                    db.session.commit()
                     self.auth_token= self.current_user.encode_auth_token(self.current_user_id)
                     responseObject = {
                         'status': 'success',
-                        'message': 'Property and workOrder created successfully!'
+                        'message': 'Property and work orders created successfully!',
+                        'property_id': property_id,
+                        'work_order_ids': [wo.work_order_id for wo in created_work_orders]
                     }
                     return make_response(jsonify(responseObject)), 201
                 else:
@@ -193,11 +247,88 @@ class PropertyAPI(MethodView):
                 'message': 'Error occurred while fetching properties'
             }
             return make_response(jsonify(responseObject)), 500
+
+
+class PropertyWorkOrderAPI(MethodView):
+    def __init__(self):
+        try:
+            self.auth_header = request.headers.get('Authorization')
+            self.auth_token = self.auth_header.split(" ")[1] if self.auth_header else ''
+            self.current_user_id = User.decode_auth_token(self.auth_token)
+            self.is_admin = False
+            if isinstance(self.current_user_id, str):
+                self.is_token_error = True
+            else:
+                self.is_token_error = False
+                self.current_user = User.query.filter_by(user_id=self.current_user_id).first()
+                self.is_admin = self.current_user.role == 'admin'
+        except Exception as e:
+            app.logger.error(e)
+
+    def post(self, property_id):
+        try:
+            if self.is_token_error or not self.is_admin:
+                responseObject = {
+                    'status': 'fail',
+                    'message': 'Unauthorized or Invalid token. Please check your role permissions and log in again '
+                }
+                return make_response(jsonify(responseObject)), 403
+
+            property_record = Property.query.filter_by(property_id=property_id).first()
+            if not property_record:
+                responseObject = {'status': 'fail', 'message': 'Property not found.'}
+                return make_response(jsonify(responseObject)), 404
+
+            data = request.get_json() or {}
+            assigned_labour_id, assigned_driver_id, parse_error = _parse_assignment_ids(data)
+            if parse_error:
+                responseObject = {'status': 'fail', 'message': parse_error[0]}
+                return make_response(jsonify(responseObject)), parse_error[1]
+
+            labour_user, driver_user, user_error = _validate_assignment_users(
+                assigned_labour_id, assigned_driver_id
+            )
+            if user_error:
+                responseObject = {'status': 'fail', 'message': user_error[0]}
+                return make_response(jsonify(responseObject)), user_error[1]
+
+            created_work_orders = []
+            for assigned_user in (labour_user, driver_user):
+                work_order = WorkOrder(
+                    property_id=property_id,
+                    user_id=assigned_user.user_id,
+                    assigned_date=datetime.now(),
+                    is_completed=False,
+                    total_work_done=0,
+                    total_earnings=0
+                )
+                assigned_user.has_work = True
+                assigned_user.updated_at = datetime.now()
+                db.session.add(work_order)
+                created_work_orders.append(work_order)
+
+            db.session.commit()
+            responseObject = {
+                'status': 'success',
+                'message': 'New labour and driver work orders created successfully.',
+                'property_id': property_id,
+                'work_order_ids': [wo.work_order_id for wo in created_work_orders]
+            }
+            return make_response(jsonify(responseObject)), 201
+        except Exception as e:
+            app.logger.error('property work order commit error ' + str(e))
+            db.session.rollback()
+            responseObject = {
+                'status': 'fail',
+                'message': 'Error occurred while creating work orders'
+            }
+            return make_response(jsonify(responseObject)), 500
             
                 
 
     
 properties_view = PropertyAPI.as_view('property_api')
+property_work_order_view = PropertyWorkOrderAPI.as_view('property_work_order_api')
 property_blueprint.add_url_rule(
     '/api/property',
     view_func=properties_view,
@@ -212,4 +343,9 @@ property_blueprint.add_url_rule(
     '/api/property',
     view_func=properties_view,
     methods=['GET']
+)
+property_blueprint.add_url_rule(
+    '/api/property/<int:property_id>/work_order',
+    view_func=property_work_order_view,
+    methods=['POST']
 )

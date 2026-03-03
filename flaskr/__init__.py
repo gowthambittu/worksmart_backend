@@ -1,5 +1,4 @@
 import os
-import os
 from dotenv import load_dotenv
 from urllib.parse import quote
 from flask_bcrypt import Bcrypt
@@ -16,7 +15,28 @@ load_dotenv()
 # def create_app(test_config=None):
 #     # create and configure the app
 app = Flask(__name__)
-CORS(app, origins="http://localhost:3000", resources={r"/*": {"origins": "https://smartworkmanagement.com"}})
+
+# Allow local dev and production UI origins. Override with CORS_ORIGINS env:
+# CORS_ORIGINS="http://localhost:3000,https://smartworkmanagement.com"
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv(
+        "CORS_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000,https://smartworkmanagement.com",
+    ).split(",")
+    if origin.strip()
+]
+
+CORS(
+    app,
+    resources={
+        r"/auth/*": {"origins": allowed_origins},
+        r"/api/*": {"origins": allowed_origins},
+        r"/hello": {"origins": allowed_origins},
+    },
+    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
+)
 db_password = quote(os.getenv('MYSQL_PASSWORD'))
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('SQLALCHEMY_DATABASE_URI').format(db_password)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False

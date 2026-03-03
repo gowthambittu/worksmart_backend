@@ -74,9 +74,22 @@ class LoginAPI(MethodView):
             user = User.query.filter_by(
                 email=post_data.get('email')
             ).first()
-            if user and bcrypt.check_password_hash(
-                user.password, post_data.get('password')
-            ):
+            password_ok = False
+            if user:
+                try:
+                    password_ok = bcrypt.check_password_hash(
+                        user.password, post_data.get('password')
+                    )
+                except Exception as e:
+                    # Common case: "Invalid salt" when the stored password hash isn't a valid bcrypt hash.
+                    app.logger.warning(
+                        "Password verification failed for user_id=%s email=%s: %s",
+                        getattr(user, 'user_id', None),
+                        getattr(user, 'email', None),
+                        str(e),
+                    )
+
+            if user and password_ok:
                 auth_token = user.encode_auth_token(user.user_id)
                 user_role = user.role
                 if auth_token:
