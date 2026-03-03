@@ -82,7 +82,7 @@ class WorkRecordAPI(MethodView):
                         }
                 return make_response(jsonify(responseObject)), 403
             else:
-                data = request.get_json()
+                data = request.get_json() or {}
                 work_record_id = data.get('record_id')
                 if not work_record_id:
                     responseObject = {
@@ -99,29 +99,41 @@ class WorkRecordAPI(MethodView):
                                     }
                         return make_response(jsonify(responseObject)), 404
                     if 'is_verified' in data:
-                        is_verified = data.get('is_verified') == '1'
+                        current_verified = bool(work_record.is_verified)
+                        is_verified = str(data.get('is_verified')).lower() in ('1', 'true', 'yes')
                         work_record.is_verified = is_verified
-                        db.session.commit()
-                        if is_verified:
+                        if is_verified and not current_verified:
                             work_order = WorkOrder.query.filter_by(work_order_id=work_record.work_order_id).first()
+                            if not work_order:
+                                responseObject = {
+                                    'status': 'error',
+                                    'message': 'Work order not found'
+                                }
+                                return make_response(jsonify(responseObject)), 404
+
                             property = Property.query.filter_by(property_id=work_order.property_id).first()
+                            if not property:
+                                responseObject = {
+                                    'status': 'error',
+                                    'message': 'Property not found'
+                                }
+                                return make_response(jsonify(responseObject)), 404
+
                             user = User.query.filter_by(user_id=work_order.user_id).first()
-                            print(user.role)
-                            pay_rate = property.cost_to_labour if user.role == 'labour' else property.cost_to_driver
-                            if work_order:
-                                if(data.get('work_done') > 0):
-                                # Assuming you have some values to update total_earnings and total_work_done
-                                    work_order.total_work_done += data.get('work_done')  
-                                    print(work_order.total_work_done)
-                                    work_order.total_earnings = (work_order.total_work_done*pay_rate)  # Update with your logic
-                                    property.completed_work+= data.get('work_done') if user.role == 'labour' else 0
-                                    db.session.commit()
+                            pay_rate = property.cost_to_labour if user and user.role == 'labour' else property.cost_to_driver
+
+                            work_done = float(work_record.work_done_tons or 0)
+                            if work_done > 0:
+                                work_order.total_work_done = float(work_order.total_work_done or 0) + work_done
+                                work_order.total_earnings = float(work_order.total_work_done) * float(pay_rate or 0)
+                                property.completed_work = float(property.completed_work or 0) + work_done
+                            else:
+                                if work_order.paid_out is None:
+                                    work_order.paid_out = work_done
                                 else:
-                                    if work_order.paid_out is None:
-                                        work_order.paid_out = data.get('work_done')
-                                    else:
-                                        work_order.paid_out += data.get('work_done')
-                                    db.session.commit()
+                                    work_order.paid_out = float(work_order.paid_out) + work_done
+
+                        db.session.commit()
                         responseObject = {
                         'status': 'success',
                         'message': f'Work Record {work_record_id} updated successfully'

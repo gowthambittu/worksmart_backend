@@ -18,33 +18,45 @@ property_blueprint=Blueprint("property",__name__)
 def _parse_assignment_ids(data):
     assigned_labour_id = data.get('assigned_labour_id')
     assigned_driver_id = data.get('assigned_driver_id')
-    if assigned_labour_id is None or assigned_driver_id is None:
-        return None, None, ('assigned_labour_id and assigned_driver_id are required.', 400)
+    assigned_labour_id = None if assigned_labour_id in (None, '') else assigned_labour_id
+    assigned_driver_id = None if assigned_driver_id in (None, '') else assigned_driver_id
+
+    if assigned_labour_id is None and assigned_driver_id is None:
+        return None, None, ('At least one of assigned_labour_id or assigned_driver_id is required.', 400)
 
     try:
-        assigned_labour_id = int(assigned_labour_id)
-        assigned_driver_id = int(assigned_driver_id)
+        if assigned_labour_id is not None:
+            assigned_labour_id = int(assigned_labour_id)
+        if assigned_driver_id is not None:
+            assigned_driver_id = int(assigned_driver_id)
     except (TypeError, ValueError):
         return None, None, ('assigned_labour_id and assigned_driver_id must be valid user IDs.', 400)
 
-    if assigned_labour_id == assigned_driver_id:
+    if (
+        assigned_labour_id is not None
+        and assigned_driver_id is not None
+        and assigned_labour_id == assigned_driver_id
+    ):
         return None, None, ('assigned_labour_id and assigned_driver_id must be different users.', 400)
 
     return assigned_labour_id, assigned_driver_id, None
 
 
 def _validate_assignment_users(assigned_labour_id, assigned_driver_id):
-    labour_user = User.query.filter_by(user_id=assigned_labour_id).first()
-    driver_user = User.query.filter_by(user_id=assigned_driver_id).first()
-
-    if not labour_user:
-        return None, None, ('Assigned labour user not found.', 404)
-    if not driver_user:
-        return None, None, ('Assigned driver user not found.', 404)
-    if labour_user.role != 'labour':
-        return None, None, ('assigned_labour_id must belong to a labour user.', 400)
-    if driver_user.role != 'driver':
-        return None, None, ('assigned_driver_id must belong to a driver user.', 400)
+    labour_user = None
+    driver_user = None
+    if assigned_labour_id is not None:
+        labour_user = User.query.filter_by(user_id=assigned_labour_id).first()
+        if not labour_user:
+            return None, None, ('Assigned labour user not found.', 404)
+        if labour_user.role != 'labour':
+            return None, None, ('assigned_labour_id must belong to a labour user.', 400)
+    if assigned_driver_id is not None:
+        driver_user = User.query.filter_by(user_id=assigned_driver_id).first()
+        if not driver_user:
+            return None, None, ('Assigned driver user not found.', 404)
+        if driver_user.role != 'driver':
+            return None, None, ('assigned_driver_id must belong to a driver user.', 400)
 
     return labour_user, driver_user, None
 
@@ -111,6 +123,8 @@ class PropertyAPI(MethodView):
 
                     created_work_orders = []
                     for assigned_user in (labour_user, driver_user):
+                        if not assigned_user:
+                            continue
                         work_order = WorkOrder(
                             property_id=property_id,
                             user_id=assigned_user.user_id,
@@ -248,6 +262,78 @@ class PropertyAPI(MethodView):
             }
             return make_response(jsonify(responseObject)), 500
 
+    def put(self, property_id):
+        try:
+            if self.is_token_error or not self.is_admin:
+                responseObject = {
+                    'status': 'fail',
+                    'message': 'Unauthorized or Invalid token. Please check your role permissions and log in again '
+                }
+                return make_response(jsonify(responseObject)), 403
+
+            property_record = Property.query.filter_by(property_id=property_id).first()
+            if not property_record:
+                responseObject = {
+                    'status': 'fail',
+                    'message': 'Property not found.'
+                }
+                return make_response(jsonify(responseObject)), 404
+
+            data = request.get_json() or {}
+
+            incoming_name = data.get('property_name')
+            if incoming_name and incoming_name != property_record.property_name:
+                existing_property = Property.query.filter_by(property_name=incoming_name).first()
+                if existing_property and existing_property.property_id != property_id:
+                    responseObject = {
+                        'status': 'fail',
+                        'message': 'Property name already exists.'
+                    }
+                    return make_response(jsonify(responseObject)), 409
+
+            if incoming_name is not None:
+                property_record.property_name = incoming_name
+            if data.get('estimated_work') is not None:
+                property_record.estimated_work = data.get('estimated_work')
+            if data.get('land_area_acres') is not None:
+                property_record.land_area_acres = data.get('land_area_acres')
+            if data.get('purchase_cost') is not None:
+                property_record.purchase_cost = data.get('purchase_cost')
+            if data.get('location') is not None:
+                property_record.location = data.get('location')
+            if data.get('cost_to_labour') is not None:
+                property_record.cost_to_labour = data.get('cost_to_labour')
+            if data.get('cost_to_driver') is not None:
+                property_record.cost_to_driver = data.get('cost_to_driver')
+
+            purchase_date_str = data.get('purchase_date')
+            if purchase_date_str:
+                property_record.purchase_date = datetime.strptime(purchase_date_str, "%m-%d-%Y")
+
+            property_record.updated_at = datetime.utcnow()
+            db.session.commit()
+
+            responseObject = {
+                'status': 'success',
+                'message': 'Property updated successfully.'
+            }
+            return make_response(jsonify(responseObject)), 200
+        except ValueError:
+            db.session.rollback()
+            responseObject = {
+                'status': 'fail',
+                'message': 'Invalid purchase_date format. Expected MM-DD-YYYY.'
+            }
+            return make_response(jsonify(responseObject)), 400
+        except Exception as e:
+            app.logger.error('property record update error ' + str(e))
+            db.session.rollback()
+            responseObject = {
+                'status': 'fail',
+                'message': 'Error occurred while updating property'
+            }
+            return make_response(jsonify(responseObject)), 500
+
 
 class PropertyWorkOrderAPI(MethodView):
     def __init__(self):
@@ -294,6 +380,8 @@ class PropertyWorkOrderAPI(MethodView):
 
             created_work_orders = []
             for assigned_user in (labour_user, driver_user):
+                if not assigned_user:
+                    continue
                 work_order = WorkOrder(
                     property_id=property_id,
                     user_id=assigned_user.user_id,
@@ -310,7 +398,7 @@ class PropertyWorkOrderAPI(MethodView):
             db.session.commit()
             responseObject = {
                 'status': 'success',
-                'message': 'New labour and driver work orders created successfully.',
+                'message': 'New work orders created successfully.',
                 'property_id': property_id,
                 'work_order_ids': [wo.work_order_id for wo in created_work_orders]
             }
