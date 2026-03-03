@@ -1,4 +1,4 @@
-from flask import Blueprint, request, make_response, jsonify
+from flask import Blueprint, request, make_response, jsonify, g
 from flask.views import MethodView
 from . import bcrypt, db,app
 from flaskr.models import User,BlacklistToken,UserActivity
@@ -7,6 +7,13 @@ import jwt
 import re
 
 auth_blueprint = Blueprint('auth', __name__)
+
+
+def _log_exception(event_name, exc):
+    app.logger.exception(
+        event_name,
+        extra={"request_id": getattr(g, "request_id", None)},
+    )
 
 class RegisterAPI(MethodView):
     """
@@ -49,7 +56,7 @@ class RegisterAPI(MethodView):
                 user_activity.log_activity()
                 return make_response(jsonify(responseObject)), 201
             except Exception as e:
-                app.logger.error(e)
+                _log_exception("auth_register_failed", e)
                 responseObject = {
                     'status': 'fail',
                     'error': str(e)
@@ -109,7 +116,7 @@ class LoginAPI(MethodView):
                 }
                 return make_response(jsonify(responseObject)), 404
         except Exception as e:
-            print(e)
+            _log_exception("auth_login_failed", e)
             responseObject = {
                 'status': 'fail',
                 'message': str(e)
@@ -134,7 +141,7 @@ class UserAPI(MethodView):
             else:
                 return None
         except Exception as e:
-            app.logger.error(e)
+            _log_exception("auth_user_authenticate_failed", e)
             return None
 
     def _check_admin(self):
@@ -437,7 +444,6 @@ auth_blueprint.add_url_rule(
     view_func=logout_view,
     methods=['POST']
 )
-
 
 
 

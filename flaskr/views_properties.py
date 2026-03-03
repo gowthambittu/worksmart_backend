@@ -1,4 +1,4 @@
-from flask import Blueprint, request, make_response, jsonify
+from flask import Blueprint, request, make_response, jsonify, g
 from flask.views import MethodView
 from . import bcrypt, db,app
 from flaskr.models import User,BlacklistToken,Property,WorkOrder,WorkRecord
@@ -13,6 +13,13 @@ import base64
 from sqlalchemy.orm import joinedload
 
 property_blueprint=Blueprint("property",__name__)
+
+
+def _log_exception(event_name, exc):
+    app.logger.exception(
+        event_name,
+        extra={"request_id": getattr(g, "request_id", None)},
+    )
 
 
 def _parse_assignment_ids(data):
@@ -74,7 +81,7 @@ class PropertyAPI(MethodView):
                 self.current_user = User.query.filter_by(user_id=self.current_user_id).first()
                 self.is_admin = self.current_user.role == 'admin'     
         except Exception as e:
-            app.logger.error(e)
+            _log_exception("property_init_failed", e)
         
     def post(self):
         try:
@@ -154,7 +161,7 @@ class PropertyAPI(MethodView):
                     }
                     return make_response(jsonify(responseObject)), 202
         except Exception as e:
-            app.logger.error('property record commit error ' + str(e))
+            _log_exception("property_create_failed", e)
             db.session.rollback()  # Rollback the transaction in case of an error
             responseObject = {
                 'status': 'fail',
@@ -255,7 +262,7 @@ class PropertyAPI(MethodView):
 
 
         except Exception as e:
-            app.logger.error('property record get error ' + str(e))
+            _log_exception("property_get_failed", e)
             responseObject = {
                 'status': 'fail',
                 'message': 'Error occurred while fetching properties'
@@ -326,7 +333,7 @@ class PropertyAPI(MethodView):
             }
             return make_response(jsonify(responseObject)), 400
         except Exception as e:
-            app.logger.error('property record update error ' + str(e))
+            _log_exception("property_update_failed", e)
             db.session.rollback()
             responseObject = {
                 'status': 'fail',
@@ -349,7 +356,7 @@ class PropertyWorkOrderAPI(MethodView):
                 self.current_user = User.query.filter_by(user_id=self.current_user_id).first()
                 self.is_admin = self.current_user.role == 'admin'
         except Exception as e:
-            app.logger.error(e)
+            _log_exception("property_work_order_init_failed", e)
 
     def post(self, property_id):
         try:
@@ -404,7 +411,7 @@ class PropertyWorkOrderAPI(MethodView):
             }
             return make_response(jsonify(responseObject)), 201
         except Exception as e:
-            app.logger.error('property work order commit error ' + str(e))
+            _log_exception("property_work_order_create_failed", e)
             db.session.rollback()
             responseObject = {
                 'status': 'fail',
