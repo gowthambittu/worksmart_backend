@@ -1,4 +1,4 @@
-from flask import Blueprint, request, make_response, jsonify
+from flask import Blueprint, request, make_response, jsonify, g
 from flask.views import MethodView
 from . import bcrypt, db,app
 from flaskr.models import OutboundRecord, User, UserActivity
@@ -9,6 +9,13 @@ from flask import send_from_directory
 import os
 
 outbound_record_blueprint = Blueprint("outbound_record", __name__)
+
+
+def _log_exception(event_name, exc):
+    app.logger.exception(
+        event_name,
+        extra={"request_id": getattr(g, "request_id", None)},
+    )
 
 class OutboundRecordAPI(MethodView):
     def __init__(self):
@@ -25,7 +32,7 @@ class OutboundRecordAPI(MethodView):
                 self.current_user_role = self.current_user.role
                 self.is_admin = self.current_user.role == 'admin'
         except Exception as e:
-            app.logger.error(e)
+            _log_exception("outbound_init_failed", e)
 
     def post(self):
         try:
@@ -68,6 +75,7 @@ class OutboundRecordAPI(MethodView):
                 user_activity.log_activity()
                 return make_response(jsonify(responseObject)), 201
         except Exception as e:
+            _log_exception("outbound_create_failed", e)
             db.session.rollback()
             responseObject = {
                 'status': 'fail',
@@ -119,7 +127,7 @@ class OutboundRecordAPI(MethodView):
                         }
                         return make_response(jsonify(responseObject)), 400 
         except Exception as e:
-            app.logger.error('outbound record commit error ' + str(e))
+            _log_exception("outbound_update_failed", e)
             db.session.rollback()  # Rollback the transaction in case of an error
             responseObject = {
                 'status': 'fail',
@@ -152,7 +160,7 @@ class OutboundRecordAPI(MethodView):
                                     }
                 return make_response(jsonify(responseObject)), 200
         except Exception as e:
-            app.logger.error('property record get error ' + str(e))
+            _log_exception("outbound_get_failed", e)
             responseObject = {
                 'status': 'fail',
                 'message': 'Error occurred while fetching properties'

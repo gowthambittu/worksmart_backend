@@ -1,4 +1,4 @@
-from flask import Blueprint, request, make_response, jsonify
+from flask import Blueprint, request, make_response, jsonify, g
 from flask.views import MethodView
 from . import bcrypt, db,app
 from flaskr.models import User,BlacklistToken,Property,WorkOrder,WorkRecord,UserActivity
@@ -8,6 +8,13 @@ from flask import send_from_directory
 import os
 
 work_record_blueprint=Blueprint("work_record",__name__)
+
+
+def _log_exception(event_name, exc):
+    app.logger.exception(
+        event_name,
+        extra={"request_id": getattr(g, "request_id", None)},
+    )
 
 class WorkRecordAPI(MethodView):
     def __init__(self):
@@ -24,7 +31,7 @@ class WorkRecordAPI(MethodView):
                 self.current_user_role = self.current_user.role
                 self.is_admin = self.current_user.role == 'admin'     
         except Exception as e:
-            app.logger.error(e)
+            _log_exception("work_record_init_failed", e)
     def post(self):
         try:
             if self.is_token_error:
@@ -66,7 +73,7 @@ class WorkRecordAPI(MethodView):
                     user_activity.log_activity()
                     return make_response(jsonify(responseObject)), 201
         except Exception as e:
-            app.logger.error('property record commit error ' + str(e))
+            _log_exception("work_record_create_failed", e)
             db.session.rollback()  # Rollback the transaction in case of an error
             responseObject = {
                 'status': 'fail',
@@ -148,7 +155,7 @@ class WorkRecordAPI(MethodView):
                         }
                         return make_response(jsonify(responseObject)), 400 
         except Exception as e:
-            app.logger.error('property record commit error ' + str(e))
+            _log_exception("work_record_update_failed", e)
             db.session.rollback()  # Rollback the transaction in case of an error
             responseObject = {
                 'status': 'fail',
