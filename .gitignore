@@ -19,3 +19,8 @@ dist/
 build/
 *.egg-info/
 .env
+.env.local
+.env.production
+!.env.example
+!.env.local.example
+!.env.production.example

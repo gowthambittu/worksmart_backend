@@ -17,7 +17,14 @@ import cloudinary.uploader
 
 
 
-load_dotenv() 
+env_file = os.getenv("ENV_FILE")
+if env_file:
+    load_dotenv(env_file)
+else:
+    app_env = os.getenv("APP_ENV", "local").lower()
+    default_env_file = ".env.production" if app_env == "production" else ".env.local"
+    load_dotenv(default_env_file)
+    load_dotenv(".env")
 
 cloudinary.config(
     cloud_name=os.getenv('CLOUDINARY_CLOUD_NAME'),

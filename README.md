@@ -9,7 +9,14 @@
   - `pip install -r requirements.txt`
 
 ## Environment
-Copy `.env.example` to `.env` and fill values.
+Environment loading order:
+- If `ENV_FILE` is set, backend loads that file.
+- Else if `APP_ENV=production`, backend loads `.env.production`.
+- Else backend loads `.env.local` (and then `.env` as fallback).
+
+Recommended setup:
+- Copy `.env.local.example` to `.env.local` for local development.
+- Copy `.env.production.example` to `.env.production` for production values.
 
 Required keys:
 - `MYSQL_PASSWORD`
