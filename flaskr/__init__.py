@@ -61,7 +61,7 @@ CORS(
         r"/metrics": {"origins": allowed_origins},
     },
     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_headers=["Content-Type", "Authorization", "X-Request-ID", "Accept"],
 )
 db_password = quote(os.getenv('MYSQL_PASSWORD'))
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('SQLALCHEMY_DATABASE_URI').format(db_password)
