@@ -18,12 +18,33 @@ Required keys:
 - `BCRYPT_LOG_ROUNDS`
 - `IMG_FOLDER`
 - `OUTBOUND_FOLDER`
+- `CLOUDINARY_CLOUD_NAME`
+- `CLOUDINARY_API_KEY`
+- `CLOUDINARY_API_SECRET`
 - `CORS_ORIGINS`
 - `LOG_LEVEL`
 
 ## Run
 - Dev server:
   - `flask --app flaskr run --debug --port 8080`
+
+## Render Deployment (Free Tier)
+- This repo includes `render.yaml` for a Python web service.
+- Build command: `pip install -r requirements.txt`
+- Start command: `gunicorn -w ${WEB_CONCURRENCY:-2} -b 0.0.0.0:${PORT:-10000} flaskr:app`
+- Health check: `/healthz`
+
+Set these environment variables in Render:
+- `SQLALCHEMY_DATABASE_URI` (Clever example):
+  - `mysql+mysqlconnector://<user>:<password>@<host>:3306/<db>`
+- `MYSQL_PASSWORD` (only needed if your URI uses `${MYSQL_PASSWORD}` placeholder)
+- `SECRET_KEY`
+- `BCRYPT_LOG_ROUNDS` (e.g. `12`)
+- `CORS_ORIGINS` (comma-separated, include your Render frontend URL)
+- `CLOUDINARY_CLOUD_NAME`
+- `CLOUDINARY_API_KEY`
+- `CLOUDINARY_API_SECRET`
+- `LOG_LEVEL` (e.g. `INFO`)
 
 ## Observability
 

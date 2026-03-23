@@ -9,7 +9,6 @@ from datetime import datetime
 from flaskr.schemas import PropertySchema, WorkOrderSchema,WorkRecordSchema
 from flask import send_file
 import mimetypes
-import base64
 from sqlalchemy.orm import joinedload
 
 property_blueprint=Blueprint("property",__name__)
@@ -201,13 +200,6 @@ class PropertyAPI(MethodView):
                         work_records = WorkRecord.query.filter_by(work_order_id=work_order['work_order_id']).all()
                         work_record_schema = WorkRecordSchema(many=True)
                         work_records = work_record_schema.dump(work_records)
-                        for work_record in work_records:
-                            try:
-                                with open(work_record['proof_of_work_file_path'], 'rb') as image_file:
-                                    encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
-                                work_record['proof_of_work_file_path'] = encoded_string
-                            except FileNotFoundError:
-                                work_record['proof_of_work_file_path'] = None
 
                         work_order['work_records'] = work_records
                         

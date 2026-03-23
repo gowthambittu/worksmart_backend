@@ -6,6 +6,7 @@ from datetime import datetime
 from flaskr.schemas import PropertySchema, WorkOrderSchema
 from flask import send_from_directory
 import os
+import cloudinary.uploader
 
 work_record_blueprint=Blueprint("work_record",__name__)
 
@@ -51,9 +52,12 @@ class WorkRecordAPI(MethodView):
                    return make_response(jsonify(responseObject)), 400
 
                 if file:
-                    # Save the file to the uploads folder
-                    filename = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
-                    file.save(filename)
+                    upload_result = cloudinary.uploader.upload(
+                        file,
+                        folder="worksmart/work_records",
+                        resource_type="auto"
+                    )
+                    filename = upload_result['secure_url']
                     
                     new_work_record = WorkRecord(
                         work_order_id=data['work_order_id'],

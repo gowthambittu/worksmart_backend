@@ -4,9 +4,9 @@ from . import bcrypt, db,app
 from flaskr.models import OutboundRecord, User, UserActivity
 from datetime import datetime
 from flaskr.schemas import OutboundRecordSchema
-import base64
 from flask import send_from_directory
 import os
+import cloudinary.uploader
 
 outbound_record_blueprint = Blueprint("outbound_record", __name__)
 
@@ -52,9 +52,12 @@ class OutboundRecordAPI(MethodView):
                              }
                    return make_response(jsonify(responseObject)), 400
             if file:
-                # Save the file to the uploads folder
-                filename = os.path.join(app.config['OUTBOUND_FOLDER'], file.filename)
-                file.save(filename)
+                upload_result = cloudinary.uploader.upload(
+                    file,
+                    folder="worksmart/outbound_records",
+                    resource_type="auto"
+                )
+                filename = upload_result['secure_url']
                 
                 new_outbound_record = OutboundRecord(
                     weight_in_tons=data['weight_in_tons'],
@@ -147,13 +150,6 @@ class OutboundRecordAPI(MethodView):
                     outbound = OutboundRecord.query.all()
                     outbound_schema = OutboundRecordSchema(many=True)
                     outbound_records = (outbound_schema.dump(outbound))   
-                    for record in outbound_records:
-                            try:
-                                with open(record['receipt_proof'], 'rb') as image_file:
-                                    encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
-                                record['receipt_proof'] = encoded_string
-                            except FileNotFoundError:
-                                record['receipt_proof'] = None
                     responseObject = {
                                         'status': 'success',
                                         'data': outbound_records

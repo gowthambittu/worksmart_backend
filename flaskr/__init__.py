@@ -12,10 +12,19 @@ from flask import Flask, g, jsonify, request
 import logging
 from flask_migrate import Migrate
 from sqlalchemy import text
+import cloudinary
+import cloudinary.uploader
 
 
 
 load_dotenv() 
+
+cloudinary.config(
+    cloud_name=os.getenv('CLOUDINARY_CLOUD_NAME'),
+    api_key=os.getenv('CLOUDINARY_API_KEY'),
+    api_secret=os.getenv('CLOUDINARY_API_SECRET'),
+    secure=True
+)
 
 # def create_app(test_config=None):
 #     # create and configure the app
@@ -63,8 +72,9 @@ CORS(
     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-Request-ID", "Accept"],
 )
-db_password = quote(os.getenv('MYSQL_PASSWORD'))
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('SQLALCHEMY_DATABASE_URI').format(db_password)
+db_password = quote(os.getenv('MYSQL_PASSWORD', ''))
+database_uri_template = os.getenv('SQLALCHEMY_DATABASE_URI', '')
+app.config['SQLALCHEMY_DATABASE_URI'] = database_uri_template.format(db_password)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = os.getenv('IMG_FOLDER')
 app.config['OUTBOUND_FOLDER'] = os.getenv('OUTBOUND_FOLDER')
