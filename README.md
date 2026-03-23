@@ -38,8 +38,12 @@ Required keys:
 ## Render Deployment (Free Tier)
 - This repo includes `render.yaml` for a Python web service.
 - Build command: `pip install -r requirements.txt`
-- Start command: `gunicorn -w ${WEB_CONCURRENCY:-2} -b 0.0.0.0:${PORT:-10000} flaskr:app`
+- Pre-deploy command: `python scripts/render_migrate.py`
+- Start command: `gunicorn -w ${WEB_CONCURRENCY:-2} -b 0.0.0.0:${PORT:-10000} wsgi:app`
 - Health check: `/healthz`
+
+If your DB already has tables but no `alembic_version` table, the pre-deploy
+script auto-runs `flask db stamp head` once, then runs `flask db upgrade`.
 
 Set these environment variables in Render:
 - `SQLALCHEMY_DATABASE_URI` (Clever example):
