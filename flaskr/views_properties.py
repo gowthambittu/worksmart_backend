@@ -1,7 +1,7 @@
 from flask import Blueprint, request, make_response, jsonify, g
 from flask.views import MethodView
 from . import bcrypt, db,app
-from flaskr.models import User,BlacklistToken,Property,WorkOrder,WorkRecord
+from flaskr.models import User,BlacklistToken,Property,WorkOrder,WorkRecord,OutboundRecord
 import os
 import jwt
 import re
@@ -414,8 +414,93 @@ class PropertyWorkOrderAPI(MethodView):
                 
 
     
+class DashboardAPI(MethodView):
+    def __init__(self):
+        try:
+            self.auth_header = request.headers.get('Authorization')
+            self.auth_token = self.auth_header.split(" ")[1] if self.auth_header else ''
+            self.current_user_id = User.decode_auth_token(self.auth_token)
+            self.is_admin = False
+            if isinstance(self.current_user_id, str):
+                self.is_token_error = True
+            else:
+                self.is_token_error = False
+                self.current_user = User.query.filter_by(user_id=self.current_user_id).first()
+                self.is_admin = self.current_user.role == 'admin'
+        except Exception as e:
+            _log_exception("dashboard_init_failed", e)
+
+    def get(self):
+        try:
+            if self.is_token_error or not self.is_admin:
+                return make_response(jsonify({'status': 'fail', 'message': 'Unauthorized'})), 403
+
+            from sqlalchemy import func
+
+            active_properties = Property.query.count()
+            total_acres = db.session.query(func.sum(Property.land_area_acres)).scalar() or 0
+            total_tons = db.session.query(func.sum(WorkOrder.total_work_done)).scalar() or 0
+            trucks_total = OutboundRecord.query.count()
+            trucks_pending = OutboundRecord.query.filter_by(is_verified=False).count()
+            active_workers = User.query.filter_by(has_work=True).filter(
+                User.role.in_(['labour', 'driver'])
+            ).count()
+
+            recent_props = Property.query.order_by(
+                Property.created_at.desc()
+            ).limit(3).all()
+
+            recent_properties = []
+            for p in recent_props:
+                progress = 0
+                if p.estimated_work and p.estimated_work > 0:
+                    progress = round((p.completed_work / float(p.estimated_work)) * 100)
+                recent_properties.append({
+                    'property_id': p.property_id,
+                    'property_name': p.property_name,
+                    'location': p.location,
+                    'land_area_acres': p.land_area_acres,
+                    'completed_work': p.completed_work,
+                    'estimated_work': float(p.estimated_work) if p.estimated_work else 0,
+                    'progress_pct': progress
+                })
+
+            recent_trucks_raw = OutboundRecord.query.order_by(
+                OutboundRecord.created_at.desc()
+            ).limit(3).all()
+
+            recent_trucks = [{
+                'outbound_id': t.outbound_id,
+                'truck_number': t.truck_number,
+                'truck_date': t.truck_date.strftime('%Y-%m-%d') if t.truck_date else None,
+                'weight_in_tons': float(t.weight_in_tons),
+                'is_verified': t.is_verified
+            } for t in recent_trucks_raw]
+
+            return make_response(jsonify({
+                'status': 'success',
+                'metrics': {
+                    'active_properties': active_properties,
+                    'total_acres': round(float(total_acres), 1),
+                    'total_tons_harvested': round(float(total_tons), 1),
+                    'trucks_dispatched': trucks_total,
+                    'trucks_pending_verification': trucks_pending,
+                    'active_workers': active_workers,
+                },
+                'recent_properties': recent_properties,
+                'recent_trucks': recent_trucks
+            })), 200
+        except Exception as e:
+            _log_exception("dashboard_get_failed", e)
+            return make_response(jsonify({
+                'status': 'fail',
+                'message': 'Error fetching dashboard data'
+            })), 500
+
+
 properties_view = PropertyAPI.as_view('property_api')
 property_work_order_view = PropertyWorkOrderAPI.as_view('property_work_order_api')
+dashboard_view = DashboardAPI.as_view('dashboard_api')
 property_blueprint.add_url_rule(
     '/api/property',
     view_func=properties_view,
@@ -435,4 +520,9 @@ property_blueprint.add_url_rule(
     '/api/property/<int:property_id>/work_order',
     view_func=property_work_order_view,
     methods=['POST']
+)
+property_blueprint.add_url_rule(
+    '/api/dashboard',
+    view_func=dashboard_view,
+    methods=['GET']
 )
