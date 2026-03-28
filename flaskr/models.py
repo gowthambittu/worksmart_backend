@@ -136,11 +136,25 @@ class Property(db.Model):
     updated_at = db.Column(db.TIMESTAMP, nullable=True, default=None, onupdate=datetime.datetime.utcnow)
     cost_to_labour = db.Column(db.Float, nullable=False)
     cost_to_driver = db.Column(db.Float, nullable=False)
+    # Crop & field details — ML attributes
+    crop_type = db.Column(db.String(100), nullable=True)
+    crop_variety = db.Column(db.String(100), nullable=True)
+    season = db.Column(db.Enum('kharif', 'rabi', 'summer'), nullable=True)
+    harvest_count = db.Column(db.Integer, nullable=True, default=0)
+    plant_spacing_ft = db.Column(db.Float, nullable=True)
+    soil_type = db.Column(db.Enum('black_cotton', 'red_sandy', 'clay_loam', 'sandy_loam', 'alluvial'), nullable=True)
+    is_irrigated = db.Column(db.Boolean, nullable=True, default=False)
+    irrigation_type = db.Column(db.Enum('drip', 'flood', 'rain_fed', 'sprinkler'), nullable=True)
+    fertilizer_type = db.Column(db.Enum('chemical', 'organic', 'mixed'), nullable=True)
+    avg_yield_per_acre = db.Column(db.Float, nullable=True)
     # workOrders = db.relationship('WorkOrder', backref='properties',lazy=True)
 
     def __init__(self, property_name, land_area_acres, location, 
                  admin_created_by, purchase_cost,purchase_date, estimated_work,
-                 completed_work=0.0, cost_to_labour=0.0, cost_to_driver=0.0):
+                 completed_work=0.0, cost_to_labour=0.0, cost_to_driver=0.0,
+                 crop_type=None, crop_variety=None, season=None, harvest_count=0,
+                 plant_spacing_ft=None, soil_type=None, is_irrigated=False,
+                 irrigation_type=None, fertilizer_type=None, avg_yield_per_acre=None):
         try:
             self.property_name = property_name
             self.land_area_acres = land_area_acres
@@ -152,6 +166,16 @@ class Property(db.Model):
             self.completed_work = completed_work
             self.cost_to_labour = cost_to_labour
             self.cost_to_driver = cost_to_driver
+            self.crop_type = crop_type
+            self.crop_variety = crop_variety
+            self.season = season
+            self.harvest_count = harvest_count
+            self.plant_spacing_ft = plant_spacing_ft
+            self.soil_type = soil_type
+            self.is_irrigated = is_irrigated
+            self.irrigation_type = irrigation_type
+            self.fertilizer_type = fertilizer_type
+            self.avg_yield_per_acre = avg_yield_per_acre
         except Exception as e:
             app.logger.error(e)
 
@@ -170,7 +194,17 @@ class Property(db.Model):
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else None,
             'updated_at': self.updated_at.strftime('%Y-%m-%d %H:%M:%S') if self.updated_at else None,
             'cost_to_labour': self.cost_to_labour,
-            'cost_to_driver': self.cost_to_driver
+            'cost_to_driver': self.cost_to_driver,
+            'crop_type': self.crop_type,
+            'crop_variety': self.crop_variety,
+            'season': self.season,
+            'harvest_count': self.harvest_count,
+            'plant_spacing_ft': self.plant_spacing_ft,
+            'soil_type': self.soil_type,
+            'is_irrigated': self.is_irrigated,
+            'irrigation_type': self.irrigation_type,
+            'fertilizer_type': self.fertilizer_type,
+            'avg_yield_per_acre': self.avg_yield_per_acre
         }
 
 class WorkOrder(db.Model):

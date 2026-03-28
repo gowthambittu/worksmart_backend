@@ -10,6 +10,7 @@ from flaskr.schemas import PropertySchema, WorkOrderSchema,WorkRecordSchema
 from flask import send_file
 import mimetypes
 from sqlalchemy.orm import joinedload
+from sqlalchemy import func
 
 property_blueprint=Blueprint("property",__name__)
 
@@ -105,6 +106,15 @@ class PropertyAPI(MethodView):
                     admin_created_by= self.current_user_id
                     cost_to_labour=data.get('cost_to_labour')
                     cost_to_driver=data.get('cost_to_driver')
+                    crop_type = data.get('crop_type')
+                    crop_variety = data.get('crop_variety')
+                    season = data.get('season')
+                    harvest_count = data.get('harvest_count')
+                    plant_spacing_ft = data.get('plant_spacing_ft')
+                    soil_type = data.get('soil_type')
+                    is_irrigated = data.get('is_irrigated', False)
+                    irrigation_type = data.get('irrigation_type')
+                    fertilizer_type = data.get('fertilizer_type')
 
                     assigned_labour_id, assigned_driver_id, parse_error = _parse_assignment_ids(data)
                     if parse_error:
@@ -122,7 +132,11 @@ class PropertyAPI(MethodView):
                                         purchase_cost=purchase_cost,land_area_acres=land_area_acres,
                                         purchase_date=purchase_date_obj,location=location,
                                         cost_to_driver=cost_to_driver,cost_to_labour=cost_to_labour,
-                                        completed_work=0)
+                                        completed_work=0,crop_type=crop_type,
+                                        crop_variety=crop_variety,season=season,
+                                        harvest_count=harvest_count,plant_spacing_ft=plant_spacing_ft,
+                                        soil_type=soil_type,is_irrigated=is_irrigated,
+                                        irrigation_type=irrigation_type,fertilizer_type=fertilizer_type)
                     db.session.add(property)
                     db.session.flush()
                     property_id = property.property_id
@@ -304,6 +318,26 @@ class PropertyAPI(MethodView):
                 property_record.cost_to_labour = data.get('cost_to_labour')
             if data.get('cost_to_driver') is not None:
                 property_record.cost_to_driver = data.get('cost_to_driver')
+            if data.get('crop_type') is not None:
+                property_record.crop_type = data.get('crop_type')
+            if data.get('crop_variety') is not None:
+                property_record.crop_variety = data.get('crop_variety')
+            if data.get('season') is not None:
+                property_record.season = data.get('season')
+            if data.get('harvest_count') is not None:
+                property_record.harvest_count = data.get('harvest_count')
+            if data.get('plant_spacing_ft') is not None:
+                property_record.plant_spacing_ft = data.get('plant_spacing_ft')
+            if data.get('soil_type') is not None:
+                property_record.soil_type = data.get('soil_type')
+            if data.get('is_irrigated') is not None:
+                property_record.is_irrigated = data.get('is_irrigated')
+            if data.get('irrigation_type') is not None:
+                property_record.irrigation_type = data.get('irrigation_type')
+            if data.get('fertilizer_type') is not None:
+                property_record.fertilizer_type = data.get('fertilizer_type')
+            if data.get('avg_yield_per_acre') is not None:
+                property_record.avg_yield_per_acre = data.get('avg_yield_per_acre')
 
             purchase_date_str = data.get('purchase_date')
             if purchase_date_str:
@@ -434,8 +468,6 @@ class DashboardAPI(MethodView):
         try:
             if self.is_token_error or not self.is_admin:
                 return make_response(jsonify({'status': 'fail', 'message': 'Unauthorized'})), 403
-
-            from sqlalchemy import func
 
             active_properties = Property.query.count()
             total_acres = db.session.query(func.sum(Property.land_area_acres)).scalar() or 0
