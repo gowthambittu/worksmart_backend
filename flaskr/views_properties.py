@@ -13,6 +13,7 @@ from sqlalchemy.orm import joinedload
 from sqlalchemy import func
 
 property_blueprint=Blueprint("property",__name__)
+CROP_TYPE_VALUES = {'subabul', 'eucalyptus', 'other'}
 
 
 def _log_exception(event_name, exc):
@@ -67,6 +68,14 @@ def _validate_assignment_users(assigned_labour_id, assigned_driver_id):
 
     return labour_user, driver_user, None
 
+
+def _normalize_crop_type(raw_crop_type):
+    value = (raw_crop_type or 'other')
+    if not isinstance(value, str):
+        return 'other'
+    value = value.strip().lower()
+    return value if value in CROP_TYPE_VALUES else 'other'
+
 class PropertyAPI(MethodView):
     def __init__(self):
         try:
@@ -106,8 +115,7 @@ class PropertyAPI(MethodView):
                     admin_created_by= self.current_user_id
                     cost_to_labour=data.get('cost_to_labour')
                     cost_to_driver=data.get('cost_to_driver')
-                    crop_type = data.get('crop_type')
-                    crop_variety = data.get('crop_variety')
+                    crop_type = _normalize_crop_type(data.get('crop_type'))
                     season = data.get('season')
                     harvest_count = data.get('harvest_count')
                     plant_spacing_ft = data.get('plant_spacing_ft')
@@ -133,7 +141,7 @@ class PropertyAPI(MethodView):
                                         purchase_date=purchase_date_obj,location=location,
                                         cost_to_driver=cost_to_driver,cost_to_labour=cost_to_labour,
                                         completed_work=0,crop_type=crop_type,
-                                        crop_variety=crop_variety,season=season,
+                                        season=season,
                                         harvest_count=harvest_count,plant_spacing_ft=plant_spacing_ft,
                                         soil_type=soil_type,is_irrigated=is_irrigated,
                                         irrigation_type=irrigation_type,fertilizer_type=fertilizer_type)
@@ -319,9 +327,7 @@ class PropertyAPI(MethodView):
             if data.get('cost_to_driver') is not None:
                 property_record.cost_to_driver = data.get('cost_to_driver')
             if data.get('crop_type') is not None:
-                property_record.crop_type = data.get('crop_type')
-            if data.get('crop_variety') is not None:
-                property_record.crop_variety = data.get('crop_variety')
+                property_record.crop_type = _normalize_crop_type(data.get('crop_type'))
             if data.get('season') is not None:
                 property_record.season = data.get('season')
             if data.get('harvest_count') is not None:
@@ -336,8 +342,6 @@ class PropertyAPI(MethodView):
                 property_record.irrigation_type = data.get('irrigation_type')
             if data.get('fertilizer_type') is not None:
                 property_record.fertilizer_type = data.get('fertilizer_type')
-            if data.get('avg_yield_per_acre') is not None:
-                property_record.avg_yield_per_acre = data.get('avg_yield_per_acre')
 
             purchase_date_str = data.get('purchase_date')
             if purchase_date_str:

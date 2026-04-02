@@ -19,8 +19,8 @@ Recommended setup:
 - Copy `.env.production.example` to `.env.production` for production values.
 
 Required keys:
-- `MYSQL_PASSWORD`
 - `SQLALCHEMY_DATABASE_URI`
+- `DATABASE_URL` (optional alternative to `SQLALCHEMY_DATABASE_URI`)
 - `SECRET_KEY`
 - `BCRYPT_LOG_ROUNDS`
 - `IMG_FOLDER`
@@ -46,9 +46,10 @@ If your DB already has tables but no `alembic_version` table, the pre-deploy
 script auto-runs `flask db stamp head` once, then runs `flask db upgrade`.
 
 Set these environment variables in Render:
-- `SQLALCHEMY_DATABASE_URI` (Clever example):
-  - `mysql+mysqlconnector://<user>:<password>@<host>:3306/<db>`
-- `MYSQL_PASSWORD` (only needed if your URI uses `${MYSQL_PASSWORD}` placeholder)
+- `SQLALCHEMY_DATABASE_URI` (Supabase/Postgres example):
+  - `postgresql://postgres:<password>@db.<project-ref>.supabase.co:5432/postgres?sslmode=require`
+- `DATABASE_URL` (optional; used if `SQLALCHEMY_DATABASE_URI` is not set)
+- `MYSQL_PASSWORD` (legacy only; needed only if your URI uses `${MYSQL_PASSWORD}` placeholder)
 - `SECRET_KEY`
 - `BCRYPT_LOG_ROUNDS` (e.g. `12`)
 - `CORS_ORIGINS` (comma-separated, include your Render frontend URL)

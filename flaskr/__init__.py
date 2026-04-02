@@ -80,9 +80,32 @@ CORS(
     allow_headers=["Content-Type", "Authorization", "X-Request-ID", "Accept"],
 )
 db_password = quote(os.getenv('MYSQL_PASSWORD', ''))
-database_uri_template = os.getenv('SQLALCHEMY_DATABASE_URI', '')
-app.config['SQLALCHEMY_DATABASE_URI'] = database_uri_template.format(db_password)
+database_uri = (os.getenv('SQLALCHEMY_DATABASE_URI') or os.getenv('DATABASE_URL') or '').strip()
+
+# Backward compatibility for older .env templates that used MYSQL_PASSWORD
+# placeholders. New setups should provide a full DB URI directly.
+if '${MYSQL_PASSWORD}' in database_uri:
+    database_uri = database_uri.replace('${MYSQL_PASSWORD}', db_password)
+if '{MYSQL_PASSWORD}' in database_uri:
+    database_uri = database_uri.replace('{MYSQL_PASSWORD}', db_password)
+if '{}' in database_uri:
+    database_uri = database_uri.format(db_password)
+
+# SQLAlchemy expects "postgresql://". Some providers expose "postgres://".
+if database_uri.startswith('postgres://'):
+    database_uri = database_uri.replace('postgres://', 'postgresql://', 1)
+
+# Supabase Postgres requires SSL in most environments.
+if '.supabase.co' in database_uri and 'sslmode=' not in database_uri:
+    separator = '&' if '?' in database_uri else '?'
+    database_uri = f'{database_uri}{separator}sslmode=require'
+
+app.config['SQLALCHEMY_DATABASE_URI'] = database_uri
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_pre_ping': True,
+    'pool_recycle': 1800,
+}
 app.config['UPLOAD_FOLDER'] = os.getenv('IMG_FOLDER')
 app.config['OUTBOUND_FOLDER'] = os.getenv('OUTBOUND_FOLDER')
 db = SQLAlchemy(app)

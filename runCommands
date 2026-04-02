@@ -7,3 +7,8 @@ flask --app flaskr db migrate -m "new table for outbound transactions"
 flask --app flaskr db upgrade 
 
 
+# Legacy MySQL manual access (if needed) - never store real password in repo.
+# mysql --user <user> --password=<password> --host <host> --port <port> <db>
+
+# Supabase/Postgres manual access:
+# psql "postgresql://postgres.<project-ref>:<password>@aws-1-ap-south-1.pooler.supabase.com:5432/postgres?sslmode=require"

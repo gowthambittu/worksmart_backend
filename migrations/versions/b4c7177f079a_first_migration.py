@@ -52,7 +52,7 @@ def upgrade():
     sa.Column('last_login', sa.DateTime(), nullable=True),
     sa.Column('is_verified', sa.Boolean(), nullable=True),
     sa.Column('is_admin', sa.Boolean(), nullable=False),
-    sa.Column('role', sa.Enum('driver', 'labour', 'admin'), nullable=False),
+    sa.Column('role', sa.Enum('driver', 'labour', 'admin', name='user_role_enum'), nullable=False),
     sa.Column('has_work', sa.Boolean(), nullable=False),
     sa.Column('updated_at', sa.TIMESTAMP(), nullable=True),
     sa.PrimaryKeyConstraint('user_id')

@@ -137,8 +137,7 @@ class Property(db.Model):
     cost_to_labour = db.Column(db.Float, nullable=False)
     cost_to_driver = db.Column(db.Float, nullable=False)
     # Crop & field details — ML attributes
-    crop_type = db.Column(db.String(100), nullable=True)
-    crop_variety = db.Column(db.String(100), nullable=True)
+    crop_type = db.Column(db.String(100), nullable=True, default='other')
     season = db.Column(db.Enum('kharif', 'rabi', 'summer'), nullable=True)
     harvest_count = db.Column(db.Integer, nullable=True, default=0)
     plant_spacing_ft = db.Column(db.Float, nullable=True)
@@ -152,7 +151,7 @@ class Property(db.Model):
     def __init__(self, property_name, land_area_acres, location, 
                  admin_created_by, purchase_cost,purchase_date, estimated_work,
                  completed_work=0.0, cost_to_labour=0.0, cost_to_driver=0.0,
-                 crop_type=None, crop_variety=None, season=None, harvest_count=0,
+                 crop_type='other', season=None, harvest_count=0,
                  plant_spacing_ft=None, soil_type=None, is_irrigated=False,
                  irrigation_type=None, fertilizer_type=None, avg_yield_per_acre=None):
         try:
@@ -167,7 +166,6 @@ class Property(db.Model):
             self.cost_to_labour = cost_to_labour
             self.cost_to_driver = cost_to_driver
             self.crop_type = crop_type
-            self.crop_variety = crop_variety
             self.season = season
             self.harvest_count = harvest_count
             self.plant_spacing_ft = plant_spacing_ft
@@ -196,7 +194,6 @@ class Property(db.Model):
             'cost_to_labour': self.cost_to_labour,
             'cost_to_driver': self.cost_to_driver,
             'crop_type': self.crop_type,
-            'crop_variety': self.crop_variety,
             'season': self.season,
             'harvest_count': self.harvest_count,
             'plant_spacing_ft': self.plant_spacing_ft,

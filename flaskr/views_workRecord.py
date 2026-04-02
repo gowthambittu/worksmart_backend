@@ -144,6 +144,23 @@ class WorkRecordAPI(MethodView):
                                 else:
                                     work_order.paid_out = float(work_order.paid_out) + work_done
 
+                            estimated_total = float(property.estimated_work or 0)
+                            completed_total = float(property.completed_work or 0)
+                            if estimated_total > 0 and completed_total >= estimated_total:
+                                property_work_orders = WorkOrder.query.filter_by(property_id=property.property_id).all()
+                                for wo in property_work_orders:
+                                    wo.is_completed = True
+                                    wo.update_date = datetime.now()
+
+                            incomplete_count = WorkOrder.query.filter_by(
+                                property_id=property.property_id, is_completed=False
+                            ).count()
+                            if incomplete_count == 0 and float(property.land_area_acres or 0) > 0:
+                                property.avg_yield_per_acre = round(
+                                    float(property.completed_work or 0) / float(property.land_area_acres),
+                                    2
+                                )
+
                         db.session.commit()
                         responseObject = {
                         'status': 'success',
