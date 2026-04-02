@@ -18,13 +18,16 @@ import cloudinary.uploader
 
 
 env_file = os.getenv("ENV_FILE")
+app_env = os.getenv("APP_ENV", "local").lower()
+
+# In production-like environments (Render), rely on platform env vars and do
+# not let checked-in dotenv files override runtime configuration.
 if env_file:
-    load_dotenv(env_file, override=True)
-else:
-    app_env = os.getenv("APP_ENV", "local").lower()
-    default_env_file = ".env.production" if app_env == "production" else ".env.local"
-    load_dotenv(default_env_file, override=True)
-    load_dotenv(".env")
+    load_dotenv(env_file, override=False)
+elif app_env != "production":
+    default_env_file = ".env.local"
+    load_dotenv(default_env_file, override=False)
+    load_dotenv(".env", override=False)
 
 cloudinary.config(
     cloud_name=os.getenv('CLOUDINARY_CLOUD_NAME'),
@@ -99,6 +102,11 @@ if database_uri.startswith('postgres://'):
 if '.supabase.co' in database_uri and 'sslmode=' not in database_uri:
     separator = '&' if '?' in database_uri else '?'
     database_uri = f'{database_uri}{separator}sslmode=require'
+
+if not database_uri:
+    raise RuntimeError(
+        "Database URI is missing. Set SQLALCHEMY_DATABASE_URI or DATABASE_URL."
+    )
 
 app.config['SQLALCHEMY_DATABASE_URI'] = database_uri
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
