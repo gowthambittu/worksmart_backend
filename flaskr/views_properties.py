@@ -1,7 +1,7 @@
 from flask import Blueprint, request, make_response, jsonify, g
 from flask.views import MethodView
 from . import bcrypt, db,app
-from flaskr.models import User,BlacklistToken,Property,WorkOrder,WorkRecord,OutboundRecord
+from flaskr.models import User,BlacklistToken,Property,WorkOrder,WorkRecord,OutboundRecord,UserActivity
 import os
 import jwt
 import re
@@ -75,6 +75,50 @@ def _normalize_crop_type(raw_crop_type):
         return 'other'
     value = value.strip().lower()
     return value if value in CROP_TYPE_VALUES else 'other'
+
+
+def _recompute_property_metrics(property_id):
+    property_record = Property.query.filter_by(property_id=property_id).first()
+    if not property_record:
+        return
+
+    work_orders = WorkOrder.query.filter_by(property_id=property_id).all()
+    property_completed_work = 0.0
+
+    for work_order in work_orders:
+        verified_records = WorkRecord.query.filter_by(
+            work_order_id=work_order.work_order_id,
+            is_verified=True,
+        ).all()
+
+        total_work_done = 0.0
+        paid_out = 0.0
+        for record in verified_records:
+            tons = float(record.work_done_tons or 0)
+            if tons > 0:
+                total_work_done += tons
+            else:
+                paid_out += tons
+
+        user = User.query.filter_by(user_id=work_order.user_id).first()
+        pay_rate = property_record.cost_to_labour if user and user.role == 'labour' else property_record.cost_to_driver
+
+        work_order.total_work_done = round(total_work_done, 2)
+        work_order.total_earnings = round(float(work_order.total_work_done or 0) * float(pay_rate or 0), 2)
+        work_order.paid_out = round(paid_out, 2) if paid_out != 0 else None
+        work_order.update_date = datetime.now()
+
+        property_completed_work += total_work_done
+
+    property_record.completed_work = round(property_completed_work, 2)
+    all_work_orders_completed = len(work_orders) > 0 and all(bool(wo.is_completed) for wo in work_orders)
+    if all_work_orders_completed and float(property_record.land_area_acres or 0) > 0:
+        property_record.avg_yield_per_acre = round(
+            float(property_record.completed_work or 0) / float(property_record.land_area_acres),
+            2,
+        )
+    else:
+        property_record.avg_yield_per_acre = None
 
 class PropertyAPI(MethodView):
     def __init__(self):
@@ -448,6 +492,58 @@ class PropertyWorkOrderAPI(MethodView):
                 'message': 'Error occurred while creating work orders'
             }
             return make_response(jsonify(responseObject)), 500
+
+    def patch(self, property_id, work_order_id):
+        try:
+            if self.is_token_error or not self.is_admin:
+                responseObject = {
+                    'status': 'fail',
+                    'message': 'Unauthorized or Invalid token. Please check your role permissions and log in again '
+                }
+                return make_response(jsonify(responseObject)), 403
+
+            work_order = WorkOrder.query.filter_by(
+                work_order_id=work_order_id,
+                property_id=property_id
+            ).first()
+            if not work_order:
+                return make_response(jsonify({'status': 'fail', 'message': 'Work order not found.'})), 404
+
+            data = request.get_json() or {}
+            if 'is_completed' not in data:
+                return make_response(jsonify({'status': 'fail', 'message': 'is_completed is required.'})), 400
+
+            reason = str(data.get('reason') or '').strip()
+            if not reason:
+                return make_response(jsonify({'status': 'fail', 'message': 'Reason is required.'})), 400
+
+            raw_status = data.get('is_completed')
+            new_status = raw_status if isinstance(raw_status, bool) else str(raw_status).lower() in ('1', 'true', 'yes')
+            old_status = bool(work_order.is_completed)
+            if old_status == new_status:
+                return make_response(jsonify({'status': 'success', 'message': 'No status change.'})), 200
+
+            work_order.is_completed = new_status
+            work_order.update_date = datetime.now()
+
+            _recompute_property_metrics(property_id)
+
+            event = 'work_order_completed' if new_status else 'work_order_reopened'
+            description = f'Work order {work_order_id} status changed to {"completed" if new_status else "in_progress"}. Reason: {reason}'
+            db.session.add(UserActivity(self.current_user_id, description, event))
+            db.session.commit()
+
+            return make_response(jsonify({
+                'status': 'success',
+                'message': f'Work order marked {"completed" if new_status else "in progress"} successfully.'
+            })), 200
+        except Exception as e:
+            _log_exception("property_work_order_patch_failed", e)
+            db.session.rollback()
+            return make_response(jsonify({
+                'status': 'fail',
+                'message': 'Error occurred while updating work order status'
+            })), 500
             
                 
 
@@ -556,6 +652,11 @@ property_blueprint.add_url_rule(
     '/api/property/<int:property_id>/work_order',
     view_func=property_work_order_view,
     methods=['POST']
+)
+property_blueprint.add_url_rule(
+    '/api/property/<int:property_id>/work_order/<int:work_order_id>',
+    view_func=property_work_order_view,
+    methods=['PATCH']
 )
 property_blueprint.add_url_rule(
     '/api/dashboard',

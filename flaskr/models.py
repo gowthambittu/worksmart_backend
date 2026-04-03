@@ -74,7 +74,7 @@ class User(db.Model):
         try:
             # Use UTC timezone for token expiration and issued at times
             utc_now = datetime.datetime.now(pytz.utc)
-            expiration = utc_now + datetime.timedelta(days=0, seconds=1000)
+            expiration = utc_now + datetime.timedelta(days=0, seconds=10000)
             issued_at = utc_now
 
             payload = {
@@ -237,6 +237,19 @@ class WorkRecord(db.Model):
 
     # Define relationship with work_orders table
     #work_order = db.relationship('WorkOrder',backref=db.backref('work_records',lazy=True))
+
+
+class WorkRecordAudit(db.Model):
+    __tablename__ = 'work_record_audits'
+
+    audit_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    record_id = db.Column(db.Integer, nullable=False)
+    action = db.Column(db.String(20), nullable=False)
+    reason = db.Column(db.Text, nullable=False)
+    before_payload = db.Column(db.Text, nullable=True)
+    after_payload = db.Column(db.Text, nullable=True)
+    acted_by_user_id = db.Column(db.Integer, db.ForeignKey('users.user_id'), nullable=False)
+    acted_at = db.Column(db.DateTime, default=db.func.current_timestamp(), nullable=False)
 
 class OutboundRecord(db.Model):
     __tablename__ = 'outbound_records'

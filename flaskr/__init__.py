@@ -79,7 +79,7 @@ CORS(
         r"/readyz": {"origins": allowed_origins},
         r"/metrics": {"origins": allowed_origins},
     },
-    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-Request-ID", "Accept"],
 )
 db_password = quote(os.getenv('MYSQL_PASSWORD', ''))
