@@ -45,12 +45,13 @@ class OutboundRecordAPI(MethodView):
             # Assuming you have a method to validate and process the outbound record data
             data = request.form
             file = request.files.get('receipt_proof')
-            if not data['weight_in_tons'] or not data['truck_number'] or not file:
+            if not data.get('weight_in_tons') or not data.get('truck_number'):
                    responseObject = {
                         'status': 'fail',
                         'message': 'Invalid Request, please provide necessary fields'
                              }
                    return make_response(jsonify(responseObject)), 400
+            filename = None
             if file:
                 upload_result = cloudinary.uploader.upload(
                     file,
@@ -58,25 +59,25 @@ class OutboundRecordAPI(MethodView):
                     resource_type="auto"
                 )
                 filename = upload_result['secure_url']
-                
-                new_outbound_record = OutboundRecord(
-                    weight_in_tons=data['weight_in_tons'],
-                    truck_number=data['truck_number'],
-                    receipt_proof=filename,
-                    created_id=self.current_user_id,
-                    truck_date = data['truck_date'],
-                )
-                
-                db.session.add(new_outbound_record)
-                db.session.commit()
 
-                responseObject = {
-                    'status': 'success',
-                    'message': 'Outbound record successfully created.'
-                }
-                user_activity = UserActivity(self.current_user_id, f'outbound record for truck number {new_outbound_record.truck_number} created','POST',)
-                user_activity.log_activity()
-                return make_response(jsonify(responseObject)), 201
+            new_outbound_record = OutboundRecord(
+                weight_in_tons=data['weight_in_tons'],
+                truck_number=data['truck_number'],
+                receipt_proof=filename,
+                created_id=self.current_user_id,
+                truck_date=data.get('truck_date'),
+            )
+
+            db.session.add(new_outbound_record)
+            db.session.commit()
+
+            responseObject = {
+                'status': 'success',
+                'message': 'Outbound record successfully created.'
+            }
+            user_activity = UserActivity(self.current_user_id, f'outbound record for truck number {new_outbound_record.truck_number} created','POST',)
+            user_activity.log_activity()
+            return make_response(jsonify(responseObject)), 201
         except Exception as e:
             _log_exception("outbound_create_failed", e)
             db.session.rollback()
