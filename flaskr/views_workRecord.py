@@ -81,7 +81,18 @@ def _recompute_property_metrics(property_id):
                 paid_out += tons
 
         user = User.query.filter_by(user_id=work_order.user_id).first()
-        pay_rate = property_record.cost_to_labour if user and user.role == 'labour' else property_record.cost_to_driver
+        if user and user.role == 'labour':
+            pay_rate = (
+                work_order.cost_to_labour
+                if work_order.cost_to_labour is not None
+                else property_record.cost_to_labour
+            )
+        else:
+            pay_rate = (
+                work_order.cost_to_driver
+                if work_order.cost_to_driver is not None
+                else property_record.cost_to_driver
+            )
 
         work_order.total_work_done = round(total_work_done, 2)
         work_order.total_earnings = round(float(work_order.total_work_done or 0) * float(pay_rate or 0), 2)

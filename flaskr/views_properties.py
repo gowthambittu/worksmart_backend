@@ -23,13 +23,13 @@ def _log_exception(event_name, exc):
     )
 
 
-def _parse_assignment_ids(data):
+def _parse_assignment_ids(data, require_any=True):
     assigned_labour_id = data.get('assigned_labour_id')
     assigned_driver_id = data.get('assigned_driver_id')
     assigned_labour_id = None if assigned_labour_id in (None, '') else assigned_labour_id
     assigned_driver_id = None if assigned_driver_id in (None, '') else assigned_driver_id
 
-    if assigned_labour_id is None and assigned_driver_id is None:
+    if require_any and assigned_labour_id is None and assigned_driver_id is None:
         return None, None, ('At least one of assigned_labour_id or assigned_driver_id is required.', 400)
 
     try:
@@ -77,6 +77,28 @@ def _normalize_crop_type(raw_crop_type):
     return value if value in CROP_TYPE_VALUES else 'other'
 
 
+def _parse_non_negative_rate(value, field_name):
+    if value is None or value == '':
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f'Invalid {field_name}.')
+    if parsed < 0:
+        raise ValueError(f'{field_name} cannot be negative.')
+    return parsed
+
+
+def _resolve_work_order_rate(work_order, property_record, user):
+    if user and user.role == 'labour':
+        if work_order.cost_to_labour is not None:
+            return work_order.cost_to_labour
+        return property_record.cost_to_labour
+    if work_order.cost_to_driver is not None:
+        return work_order.cost_to_driver
+    return property_record.cost_to_driver
+
+
 def _recompute_property_metrics(property_id):
     property_record = Property.query.filter_by(property_id=property_id).first()
     if not property_record:
@@ -101,7 +123,7 @@ def _recompute_property_metrics(property_id):
                 paid_out += tons
 
         user = User.query.filter_by(user_id=work_order.user_id).first()
-        pay_rate = property_record.cost_to_labour if user and user.role == 'labour' else property_record.cost_to_driver
+        pay_rate = _resolve_work_order_rate(work_order, property_record, user)
 
         work_order.total_work_done = round(total_work_done, 2)
         work_order.total_earnings = round(float(work_order.total_work_done or 0) * float(pay_rate or 0), 2)
@@ -147,18 +169,29 @@ class PropertyAPI(MethodView):
             
             else:
                 data=request.get_json() or {}
-                property_in_db = Property.query.filter_by(property_name=data.get('property_name')).first()
+                property_name = (data.get('property_name') or '').strip()
+                if not property_name:
+                    property_name = f'Untitled property {datetime.now().strftime("%Y%m%d%H%M%S")}'
+
+                property_in_db = Property.query.filter_by(property_name=property_name).first()
                 if not property_in_db:
-                    property_name = data.get('property_name')
                     estimated_work= data.get('estimated_work')
                     land_area_acres = data.get('land_area_acres')
+                    if land_area_acres in (None, ''):
+                        land_area_acres = 0
                     purchase_cost = data.get('purchase_cost')
                     purchase_date_str = data.get('purchase_date')
-                    purchase_date_obj = datetime.strptime(purchase_date_str, "%m-%d-%Y")
+                    purchase_date_obj = None
+                    if purchase_date_str:
+                        purchase_date_obj = datetime.strptime(purchase_date_str, "%m-%d-%Y")
                     location= data.get('location')
                     admin_created_by= self.current_user_id
                     cost_to_labour=data.get('cost_to_labour')
                     cost_to_driver=data.get('cost_to_driver')
+                    if cost_to_labour in (None, ''):
+                        cost_to_labour = 0
+                    if cost_to_driver in (None, ''):
+                        cost_to_driver = 0
                     crop_type = _normalize_crop_type(data.get('crop_type'))
                     season = data.get('season')
                     harvest_count = data.get('harvest_count')
@@ -168,7 +201,10 @@ class PropertyAPI(MethodView):
                     irrigation_type = data.get('irrigation_type')
                     fertilizer_type = data.get('fertilizer_type')
 
-                    assigned_labour_id, assigned_driver_id, parse_error = _parse_assignment_ids(data)
+                    assigned_labour_id, assigned_driver_id, parse_error = _parse_assignment_ids(
+                        data,
+                        require_any=False
+                    )
                     if parse_error:
                         responseObject = {'status': 'fail', 'message': parse_error[0]}
                         return make_response(jsonify(responseObject)), parse_error[1]
@@ -203,7 +239,9 @@ class PropertyAPI(MethodView):
                             assigned_date=datetime.now(),
                             is_completed=False,
                             total_work_done=0,
-                            total_earnings=0
+                            total_earnings=0,
+                            cost_to_labour=cost_to_labour,
+                            cost_to_driver=cost_to_driver,
                         )
                         assigned_user.has_work = True
                         assigned_user.updated_at = datetime.now()
@@ -225,6 +263,13 @@ class PropertyAPI(MethodView):
                         'message': 'Property already exist',
                     }
                     return make_response(jsonify(responseObject)), 202
+        except ValueError:
+            db.session.rollback()
+            responseObject = {
+                'status': 'fail',
+                'message': 'Invalid purchase_date format. Expected MM-DD-YYYY.'
+            }
+            return make_response(jsonify(responseObject)), 400
         except Exception as e:
             _log_exception("property_create_failed", e)
             db.session.rollback()  # Rollback the transaction in case of an error
@@ -460,6 +505,18 @@ class PropertyWorkOrderAPI(MethodView):
                 return make_response(jsonify(responseObject)), user_error[1]
 
             created_work_orders = []
+            labour_rate_input = (
+                data.get('cost_to_labour')
+                if 'cost_to_labour' in data
+                else data.get('labour_rate', property_record.cost_to_labour)
+            )
+            driver_rate_input = (
+                data.get('cost_to_driver')
+                if 'cost_to_driver' in data
+                else data.get('driver_rate', property_record.cost_to_driver)
+            )
+            labour_rate = _parse_non_negative_rate(labour_rate_input, 'cost_to_labour')
+            driver_rate = _parse_non_negative_rate(driver_rate_input, 'cost_to_driver')
             for assigned_user in (labour_user, driver_user):
                 if not assigned_user:
                     continue
@@ -469,7 +526,9 @@ class PropertyWorkOrderAPI(MethodView):
                     assigned_date=datetime.now(),
                     is_completed=False,
                     total_work_done=0,
-                    total_earnings=0
+                    total_earnings=0,
+                    cost_to_labour=labour_rate,
+                    cost_to_driver=driver_rate,
                 )
                 assigned_user.has_work = True
                 assigned_user.updated_at = datetime.now()
@@ -510,33 +569,66 @@ class PropertyWorkOrderAPI(MethodView):
                 return make_response(jsonify({'status': 'fail', 'message': 'Work order not found.'})), 404
 
             data = request.get_json() or {}
-            if 'is_completed' not in data:
-                return make_response(jsonify({'status': 'fail', 'message': 'is_completed is required.'})), 400
+            status_present = 'is_completed' in data
+            labour_rate_present = 'cost_to_labour' in data
+            driver_rate_present = 'cost_to_driver' in data
+            if not status_present and not labour_rate_present and not driver_rate_present:
+                return make_response(jsonify({'status': 'fail', 'message': 'No updates provided.'})), 400
 
             reason = str(data.get('reason') or '').strip()
             if not reason:
                 return make_response(jsonify({'status': 'fail', 'message': 'Reason is required.'})), 400
 
-            raw_status = data.get('is_completed')
-            new_status = raw_status if isinstance(raw_status, bool) else str(raw_status).lower() in ('1', 'true', 'yes')
-            old_status = bool(work_order.is_completed)
-            if old_status == new_status:
-                return make_response(jsonify({'status': 'success', 'message': 'No status change.'})), 200
+            changed = False
+            event = 'work_order_updated'
+            description = f'Work order {work_order_id} updated. Reason: {reason}'
 
-            work_order.is_completed = new_status
+            if status_present:
+                raw_status = data.get('is_completed')
+                new_status = raw_status if isinstance(raw_status, bool) else str(raw_status).lower() in ('1', 'true', 'yes')
+                old_status = bool(work_order.is_completed)
+                if old_status != new_status:
+                    work_order.is_completed = new_status
+                    changed = True
+                    event = 'work_order_completed' if new_status else 'work_order_reopened'
+                    description = f'Work order {work_order_id} status changed to {"completed" if new_status else "in_progress"}. Reason: {reason}'
+
+            if labour_rate_present:
+                new_labour_rate = _parse_non_negative_rate(data.get('cost_to_labour'), 'cost_to_labour')
+                if new_labour_rate != work_order.cost_to_labour:
+                    work_order.cost_to_labour = new_labour_rate
+                    changed = True
+                    if event == 'work_order_updated':
+                        event = 'work_order_rate_updated'
+                        description = f'Work order {work_order_id} labour rate updated to {new_labour_rate}. Reason: {reason}'
+
+            if driver_rate_present:
+                new_driver_rate = _parse_non_negative_rate(data.get('cost_to_driver'), 'cost_to_driver')
+                if new_driver_rate != work_order.cost_to_driver:
+                    work_order.cost_to_driver = new_driver_rate
+                    changed = True
+                    if event == 'work_order_updated':
+                        event = 'work_order_rate_updated'
+                        description = f'Work order {work_order_id} driver rate updated to {new_driver_rate}. Reason: {reason}'
+
+            if not changed:
+                return make_response(jsonify({'status': 'success', 'message': 'No status or rate change.'})), 200
+
             work_order.update_date = datetime.now()
-
             _recompute_property_metrics(property_id)
-
-            event = 'work_order_completed' if new_status else 'work_order_reopened'
-            description = f'Work order {work_order_id} status changed to {"completed" if new_status else "in_progress"}. Reason: {reason}'
             db.session.add(UserActivity(self.current_user_id, description, event))
             db.session.commit()
 
             return make_response(jsonify({
                 'status': 'success',
-                'message': f'Work order marked {"completed" if new_status else "in progress"} successfully.'
+                'message': 'Work order updated successfully.'
             })), 200
+        except ValueError as e:
+            db.session.rollback()
+            return make_response(jsonify({
+                'status': 'fail',
+                'message': str(e)
+            })), 400
         except Exception as e:
             _log_exception("property_work_order_patch_failed", e)
             db.session.rollback()

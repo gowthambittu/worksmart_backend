@@ -216,6 +216,9 @@ class WorkOrder(db.Model):
     update_date = db.Column(db.DateTime, default=db.func.current_timestamp(), onupdate=db.func.current_timestamp())
     paid_out = db.Column(db.Float, nullable=True)
     total_earnings = db.Column(db.Float, default=0)
+    # Phase-1 migration: per-work-order rates (fallback to property defaults if null).
+    cost_to_labour = db.Column(db.Float, nullable=True)
+    cost_to_driver = db.Column(db.Float, nullable=True)
     
     # Define relationships with other tables
     property = db.relationship('Property', backref=db.backref('work_orders', lazy=True,uselist=False))
