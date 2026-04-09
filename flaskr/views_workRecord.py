@@ -177,7 +177,7 @@ class WorkRecordAPI(MethodView):
 
             new_work_record = WorkRecord(
                 work_order_id=data['work_order_id'],
-                work_date=_parse_work_date(data['work_date']),
+                work_date=_parse_work_date(data.get('work_date')),
                 work_done_tons=data['work_done_tons'],
                 proof_of_work_file_path=filename,
                 is_verified=False
