@@ -174,6 +174,116 @@ class OutboundRecordAPI(MethodView):
                 'message': 'Error occurred while fetching properties'
             }
             return make_response(jsonify(responseObject)), 500
+
+    def patch(self, outbound_id):
+        try:
+            if self.is_token_error or not self.is_admin:
+                return make_response(jsonify({
+                    'status': 'fail',
+                    'message': 'Unauthorized or Invalid token.'
+                })), 403
+
+            outbound_record = OutboundRecord.query.filter_by(outbound_id=outbound_id).first()
+            if not outbound_record:
+                return make_response(jsonify({
+                    'status': 'fail',
+                    'message': 'Outbound record not found'
+                })), 404
+
+            data = request.get_json() or {}
+            changed = False
+
+            if 'truck_number' in data and data.get('truck_number') is not None:
+                outbound_record.truck_number = str(data.get('truck_number')).strip()
+                changed = True
+
+            if 'truck_date' in data and data.get('truck_date'):
+                try:
+                    outbound_record.truck_date = datetime.fromisoformat(str(data.get('truck_date')).replace('Z', '+00:00'))
+                except ValueError:
+                    return make_response(jsonify({
+                        'status': 'fail',
+                        'message': 'Invalid truck_date format'
+                    })), 400
+                changed = True
+
+            if 'weight_in_kgs' in data or 'weight_in_tons' in data:
+                try:
+                    weight_in_kgs = (
+                        float(data.get('weight_in_kgs'))
+                        if data.get('weight_in_kgs') is not None
+                        else float(data.get('weight_in_tons')) * 1000.0
+                    )
+                except (TypeError, ValueError):
+                    return make_response(jsonify({
+                        'status': 'fail',
+                        'message': 'Invalid weight value'
+                    })), 400
+                outbound_record.weight_in_kgs = weight_in_kgs
+                outbound_record.weight_in_tons = weight_in_kgs / 1000.0
+                changed = True
+
+            if not changed:
+                return make_response(jsonify({
+                    'status': 'success',
+                    'message': 'No changes provided.'
+                })), 200
+
+            outbound_record.update_date = datetime.now()
+            db.session.commit()
+            user_activity = UserActivity(
+                self.current_user_id,
+                f'Outbound Record {outbound_record.truck_number} Edited',
+                'PATCH',
+            )
+            user_activity.log_activity()
+            return make_response(jsonify({
+                'status': 'success',
+                'message': 'Outbound record updated successfully'
+            })), 200
+        except Exception as e:
+            _log_exception("outbound_patch_failed", e)
+            db.session.rollback()
+            return make_response(jsonify({
+                'status': 'fail',
+                'message': 'Error occurred while updating outbound record'
+            })), 500
+
+    def delete(self, outbound_id):
+        try:
+            if self.is_token_error or not self.is_admin:
+                return make_response(jsonify({
+                    'status': 'fail',
+                    'message': 'Unauthorized or Invalid token.'
+                })), 403
+
+            outbound_record = OutboundRecord.query.filter_by(outbound_id=outbound_id).first()
+            if not outbound_record:
+                return make_response(jsonify({
+                    'status': 'fail',
+                    'message': 'Outbound record not found'
+                })), 404
+
+            truck_number = outbound_record.truck_number
+            db.session.delete(outbound_record)
+            db.session.commit()
+            user_activity = UserActivity(
+                self.current_user_id,
+                f'Outbound Record {truck_number} Deleted',
+                'DELETE',
+            )
+            user_activity.log_activity()
+            return make_response(jsonify({
+                'status': 'success',
+                'message': 'Outbound record deleted successfully'
+            })), 200
+        except Exception as e:
+            _log_exception("outbound_delete_failed", e)
+            db.session.rollback()
+            return make_response(jsonify({
+                'status': 'fail',
+                'message': 'Error occurred while deleting outbound record'
+            })), 500
             
 
         
@@ -202,4 +312,10 @@ outbound_record_blueprint.add_url_rule(
     '/api/outbound_record', 
     view_func=outbound_record_view, 
     methods=['GET']
+    )
+
+outbound_record_blueprint.add_url_rule(
+    '/api/outbound_record/<int:outbound_id>',
+    view_func=outbound_record_view,
+    methods=['PATCH', 'DELETE']
     )
