@@ -29,6 +29,21 @@ def _parse_work_date(value):
     raise ValueError('Invalid work_date format. Expected YYYY-MM-DD or ISO timestamp.')
 
 
+def _parse_work_done_kgs(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        raise ValueError('Invalid work_done_kgs value.')
+
+
+def _record_kgs(record):
+    if record.work_done_kgs is not None:
+        return float(record.work_done_kgs)
+    if record.work_done_tons is not None:
+        return float(record.work_done_tons) * 1000
+    return 0.0
+
+
 def _record_snapshot(record):
     if not record:
         return None
@@ -36,6 +51,7 @@ def _record_snapshot(record):
         'record_id': record.record_id,
         'work_order_id': record.work_order_id,
         'work_date': record.work_date.isoformat() if record.work_date else None,
+        'work_done_kgs': float(record.work_done_kgs) if record.work_done_kgs is not None else None,
         'work_done_tons': float(record.work_done_tons) if record.work_done_tons is not None else None,
         'proof_of_work_file_path': record.proof_of_work_file_path,
         'is_verified': bool(record.is_verified),
@@ -74,11 +90,11 @@ def _recompute_property_metrics(property_id):
         total_work_done = 0.0
         paid_out = 0.0
         for record in verified_records:
-            tons = float(record.work_done_tons or 0)
-            if tons > 0:
-                total_work_done += tons
+            kgs = _record_kgs(record)
+            if kgs > 0:
+                total_work_done += kgs
             else:
-                paid_out += tons
+                paid_out += kgs
 
         user = User.query.filter_by(user_id=work_order.user_id).first()
         if user and user.role == 'labour':
@@ -94,12 +110,14 @@ def _recompute_property_metrics(property_id):
                 else property_record.cost_to_driver
             )
 
-        work_order.total_work_done = round(total_work_done, 2)
-        work_order.total_earnings = round(float(work_order.total_work_done or 0) * float(pay_rate or 0), 2)
-        work_order.paid_out = round(paid_out, 2) if paid_out != 0 else None
+        total_work_done_tons = total_work_done / 1000.0
+        paid_out_tons = paid_out / 1000.0
+        work_order.total_work_done = round(total_work_done_tons, 2)
+        work_order.total_earnings = round((float(total_work_done) * float(pay_rate or 0)) / 1000.0, 2)
+        work_order.paid_out = round(paid_out_tons, 2) if paid_out_tons != 0 else None
         work_order.update_date = datetime.now()
 
-        property_completed_work += total_work_done
+        property_completed_work += total_work_done_tons
 
     property_record.completed_work = round(property_completed_work, 2)
 
@@ -148,12 +166,15 @@ class WorkRecordAPI(MethodView):
 
             data = request.form
             file = request.files.get('proof_of_work')
-            if not data.get('work_done_tons') or not data.get('work_order_id') or not data.get('work_date'):
+            work_done_kgs_raw = data.get('work_done_kgs')
+            work_done_tons_raw = data.get('work_done_tons')
+            if (not work_done_kgs_raw and not work_done_tons_raw) or not data.get('work_order_id') or not data.get('work_date'):
                 responseObject = {
                     'status': 'fail',
                     'message': 'Invalid Request, please provide necessary fields'
                 }
                 return make_response(jsonify(responseObject)), 400
+            work_done_kgs = _parse_work_done_kgs(work_done_kgs_raw) if work_done_kgs_raw else _parse_work_done_kgs(work_done_tons_raw) * 1000.0
 
             work_order = WorkOrder.query.filter_by(work_order_id=data.get('work_order_id')).first()
             if not work_order:
@@ -178,7 +199,8 @@ class WorkRecordAPI(MethodView):
             new_work_record = WorkRecord(
                 work_order_id=data['work_order_id'],
                 work_date=_parse_work_date(data.get('work_date')),
-                work_done_tons=data['work_done_tons'],
+                work_done_kgs=work_done_kgs,
+                work_done_tons=work_done_kgs / 1000.0,
                 proof_of_work_file_path=filename,
                 is_verified=False
             )
@@ -252,11 +274,17 @@ class WorkRecordAPI(MethodView):
 
             before_payload = _record_snapshot(work_record)
 
-            if 'work_done_tons' in data:
+            if 'work_done_kgs' in data or 'work_done_tons' in data:
                 try:
-                    work_record.work_done_tons = float(data.get('work_done_tons'))
+                    work_done_kgs = (
+                        float(data.get('work_done_kgs'))
+                        if data.get('work_done_kgs') is not None
+                        else float(data.get('work_done_tons')) * 1000.0
+                    )
+                    work_record.work_done_kgs = work_done_kgs
+                    work_record.work_done_tons = work_done_kgs / 1000.0
                 except (TypeError, ValueError):
-                    return make_response(jsonify({'status': 'fail', 'message': 'Invalid work_done_tons'})), 400
+                    return make_response(jsonify({'status': 'fail', 'message': 'Invalid work_done_kgs'})), 400
 
             if 'work_date' in data and data.get('work_date'):
                 work_record.work_date = _parse_work_date(data.get('work_date'))

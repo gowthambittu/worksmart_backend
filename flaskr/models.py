@@ -141,6 +141,9 @@ class Property(db.Model):
     season = db.Column(db.Enum('kharif', 'rabi', 'summer'), nullable=True)
     harvest_count = db.Column(db.Integer, nullable=True, default=0)
     plant_spacing_ft = db.Column(db.Float, nullable=True)
+    plant_spacing_row_in = db.Column(db.Float, nullable=True)
+    plant_spacing_col_in = db.Column(db.Float, nullable=True)
+    plant_spacing_sqft = db.Column(db.Float, nullable=True)
     soil_type = db.Column(db.Enum('black_cotton', 'red_sandy', 'clay_loam', 'sandy_loam', 'alluvial'), nullable=True)
     is_irrigated = db.Column(db.Boolean, nullable=True, default=False)
     irrigation_type = db.Column(db.Enum('drip', 'flood', 'rain_fed', 'sprinkler'), nullable=True)
@@ -152,7 +155,8 @@ class Property(db.Model):
                  admin_created_by, purchase_cost,purchase_date, estimated_work,
                  completed_work=0.0, cost_to_labour=0.0, cost_to_driver=0.0,
                  crop_type='other', season=None, harvest_count=0,
-                 plant_spacing_ft=None, soil_type=None, is_irrigated=False,
+                 plant_spacing_ft=None, plant_spacing_row_in=None, plant_spacing_col_in=None,
+                 plant_spacing_sqft=None, soil_type=None, is_irrigated=False,
                  irrigation_type=None, fertilizer_type=None, avg_yield_per_acre=None):
         try:
             self.property_name = property_name
@@ -169,6 +173,9 @@ class Property(db.Model):
             self.season = season
             self.harvest_count = harvest_count
             self.plant_spacing_ft = plant_spacing_ft
+            self.plant_spacing_row_in = plant_spacing_row_in
+            self.plant_spacing_col_in = plant_spacing_col_in
+            self.plant_spacing_sqft = plant_spacing_sqft
             self.soil_type = soil_type
             self.is_irrigated = is_irrigated
             self.irrigation_type = irrigation_type
@@ -197,6 +204,9 @@ class Property(db.Model):
             'season': self.season,
             'harvest_count': self.harvest_count,
             'plant_spacing_ft': self.plant_spacing_ft,
+            'plant_spacing_row_in': self.plant_spacing_row_in,
+            'plant_spacing_col_in': self.plant_spacing_col_in,
+            'plant_spacing_sqft': self.plant_spacing_sqft,
             'soil_type': self.soil_type,
             'is_irrigated': self.is_irrigated,
             'irrigation_type': self.irrigation_type,
@@ -231,6 +241,7 @@ class WorkRecord(db.Model):
     record_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     work_order_id = db.Column(db.Integer, db.ForeignKey('work_orders.work_order_id'))
     work_date = db.Column(db.DateTime, nullable=True)
+    work_done_kgs = db.Column(db.Float, nullable=True)
     work_done_tons = db.Column(db.Float, nullable=True)
     proof_of_work_file_path = db.Column(db.String(255), nullable=True)
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
@@ -260,6 +271,7 @@ class OutboundRecord(db.Model):
     outbound_id = db.Column(db.Integer, primary_key=True)
     truck_number = db.Column(db.String(50), nullable=False)
     truck_date = db.Column(db.DateTime, nullable=True)
+    weight_in_kgs = db.Column(db.Numeric(12, 2), nullable=True)
     weight_in_tons = db.Column(db.Numeric(10, 2), nullable=False) # weight in tons
     receipt_proof = db.Column(db.String(255), nullable=True)
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())

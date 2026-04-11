@@ -45,12 +45,22 @@ class OutboundRecordAPI(MethodView):
             # Assuming you have a method to validate and process the outbound record data
             data = request.form
             file = request.files.get('receipt_proof')
-            if not data.get('weight_in_tons') or not data.get('truck_number'):
+            weight_in_kgs_raw = data.get('weight_in_kgs')
+            weight_in_tons_raw = data.get('weight_in_tons')
+            if (not weight_in_kgs_raw and not weight_in_tons_raw) or not data.get('truck_number'):
                    responseObject = {
                         'status': 'fail',
                         'message': 'Invalid Request, please provide necessary fields'
                              }
                    return make_response(jsonify(responseObject)), 400
+            try:
+                weight_in_kgs = (
+                    float(weight_in_kgs_raw)
+                    if weight_in_kgs_raw not in (None, '')
+                    else float(weight_in_tons_raw) * 1000.0
+                )
+            except (TypeError, ValueError):
+                return make_response(jsonify({'status': 'fail', 'message': 'Invalid weight_in_kgs'})), 400
             filename = None
             if file:
                 upload_result = cloudinary.uploader.upload(
@@ -61,7 +71,8 @@ class OutboundRecordAPI(MethodView):
                 filename = upload_result['secure_url']
 
             new_outbound_record = OutboundRecord(
-                weight_in_tons=data['weight_in_tons'],
+                weight_in_kgs=weight_in_kgs,
+                weight_in_tons=weight_in_kgs / 1000.0,
                 truck_number=data['truck_number'],
                 receipt_proof=filename,
                 created_id=self.current_user_id,

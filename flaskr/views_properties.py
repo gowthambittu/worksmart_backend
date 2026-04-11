@@ -89,6 +89,50 @@ def _parse_non_negative_rate(value, field_name):
     return parsed
 
 
+def _parse_plant_spacing(data):
+    spacing_text = data.get('plant_spacing')
+    if spacing_text not in (None, ''):
+        normalized = re.sub(r'\s+', '', str(spacing_text))
+        parts = re.split(r'[\*xX]', normalized)
+        if len(parts) != 2:
+            raise ValueError('Invalid plant_spacing. Use format like 30*40 (inches).')
+        try:
+            row_in = float(parts[0])
+            col_in = float(parts[1])
+        except (TypeError, ValueError):
+            raise ValueError('Invalid plant_spacing. Row and column must be numbers in inches.')
+        if row_in <= 0 or col_in <= 0:
+            raise ValueError('plant_spacing values must be greater than zero.')
+        return row_in, col_in, (row_in * col_in) / 144.0, row_in / 12.0
+
+    row_raw = data.get('plant_spacing_row_in')
+    col_raw = data.get('plant_spacing_col_in')
+    if row_raw not in (None, '') or col_raw not in (None, ''):
+        if row_raw in (None, '') or col_raw in (None, ''):
+            raise ValueError('Both plant_spacing_row_in and plant_spacing_col_in are required.')
+        try:
+            row_in = float(row_raw)
+            col_in = float(col_raw)
+        except (TypeError, ValueError):
+            raise ValueError('Invalid plant spacing inches values.')
+        if row_in <= 0 or col_in <= 0:
+            raise ValueError('plant spacing inches values must be greater than zero.')
+        return row_in, col_in, (row_in * col_in) / 144.0, row_in / 12.0
+
+    plant_spacing_ft = data.get('plant_spacing_ft')
+    if plant_spacing_ft in (None, ''):
+        return None, None, None, None
+    try:
+        spacing_ft = float(plant_spacing_ft)
+    except (TypeError, ValueError):
+        raise ValueError('Invalid plant_spacing_ft.')
+    if spacing_ft <= 0:
+        raise ValueError('plant_spacing_ft must be greater than zero.')
+    row_in = spacing_ft * 12.0
+    col_in = spacing_ft * 12.0
+    return row_in, col_in, (row_in * col_in) / 144.0, spacing_ft
+
+
 def _resolve_work_order_rate(work_order, property_record, user):
     if user and user.role == 'labour':
         if work_order.cost_to_labour is not None:
@@ -97,6 +141,14 @@ def _resolve_work_order_rate(work_order, property_record, user):
     if work_order.cost_to_driver is not None:
         return work_order.cost_to_driver
     return property_record.cost_to_driver
+
+
+def _record_kgs(record):
+    if record.work_done_kgs is not None:
+        return float(record.work_done_kgs)
+    if record.work_done_tons is not None:
+        return float(record.work_done_tons) * 1000
+    return 0.0
 
 
 def _recompute_property_metrics(property_id):
@@ -116,21 +168,23 @@ def _recompute_property_metrics(property_id):
         total_work_done = 0.0
         paid_out = 0.0
         for record in verified_records:
-            tons = float(record.work_done_tons or 0)
-            if tons > 0:
-                total_work_done += tons
+            kgs = _record_kgs(record)
+            if kgs > 0:
+                total_work_done += kgs
             else:
-                paid_out += tons
+                paid_out += kgs
 
         user = User.query.filter_by(user_id=work_order.user_id).first()
         pay_rate = _resolve_work_order_rate(work_order, property_record, user)
 
-        work_order.total_work_done = round(total_work_done, 2)
-        work_order.total_earnings = round(float(work_order.total_work_done or 0) * float(pay_rate or 0), 2)
-        work_order.paid_out = round(paid_out, 2) if paid_out != 0 else None
+        total_work_done_tons = total_work_done / 1000.0
+        paid_out_tons = paid_out / 1000.0
+        work_order.total_work_done = round(total_work_done_tons, 2)
+        work_order.total_earnings = round((float(total_work_done) * float(pay_rate or 0)) / 1000.0, 2)
+        work_order.paid_out = round(paid_out_tons, 2) if paid_out_tons != 0 else None
         work_order.update_date = datetime.now()
 
-        property_completed_work += total_work_done
+        property_completed_work += total_work_done_tons
 
     property_record.completed_work = round(property_completed_work, 2)
     all_work_orders_completed = len(work_orders) > 0 and all(bool(wo.is_completed) for wo in work_orders)
@@ -195,7 +249,7 @@ class PropertyAPI(MethodView):
                     crop_type = _normalize_crop_type(data.get('crop_type'))
                     season = data.get('season')
                     harvest_count = data.get('harvest_count')
-                    plant_spacing_ft = data.get('plant_spacing_ft')
+                    spacing_row_in, spacing_col_in, spacing_sqft, plant_spacing_ft = _parse_plant_spacing(data)
                     soil_type = data.get('soil_type')
                     is_irrigated = data.get('is_irrigated', False)
                     irrigation_type = data.get('irrigation_type')
@@ -223,6 +277,8 @@ class PropertyAPI(MethodView):
                                         completed_work=0,crop_type=crop_type,
                                         season=season,
                                         harvest_count=harvest_count,plant_spacing_ft=plant_spacing_ft,
+                                        plant_spacing_row_in=spacing_row_in,plant_spacing_col_in=spacing_col_in,
+                                        plant_spacing_sqft=spacing_sqft,
                                         soil_type=soil_type,is_irrigated=is_irrigated,
                                         irrigation_type=irrigation_type,fertilizer_type=fertilizer_type)
                     db.session.add(property)
@@ -263,11 +319,11 @@ class PropertyAPI(MethodView):
                         'message': 'Property already exist',
                     }
                     return make_response(jsonify(responseObject)), 202
-        except ValueError:
+        except ValueError as e:
             db.session.rollback()
             responseObject = {
                 'status': 'fail',
-                'message': 'Invalid purchase_date format. Expected MM-DD-YYYY.'
+                'message': str(e)
             }
             return make_response(jsonify(responseObject)), 400
         except Exception as e:
@@ -421,8 +477,12 @@ class PropertyAPI(MethodView):
                 property_record.season = data.get('season')
             if data.get('harvest_count') is not None:
                 property_record.harvest_count = data.get('harvest_count')
-            if data.get('plant_spacing_ft') is not None:
-                property_record.plant_spacing_ft = data.get('plant_spacing_ft')
+            if any(k in data for k in ('plant_spacing', 'plant_spacing_ft', 'plant_spacing_row_in', 'plant_spacing_col_in')):
+                spacing_row_in, spacing_col_in, spacing_sqft, plant_spacing_ft = _parse_plant_spacing(data)
+                property_record.plant_spacing_ft = plant_spacing_ft
+                property_record.plant_spacing_row_in = spacing_row_in
+                property_record.plant_spacing_col_in = spacing_col_in
+                property_record.plant_spacing_sqft = spacing_sqft
             if data.get('soil_type') is not None:
                 property_record.soil_type = data.get('soil_type')
             if data.get('is_irrigated') is not None:
@@ -444,11 +504,11 @@ class PropertyAPI(MethodView):
                 'message': 'Property updated successfully.'
             }
             return make_response(jsonify(responseObject)), 200
-        except ValueError:
+        except ValueError as e:
             db.session.rollback()
             responseObject = {
                 'status': 'fail',
-                'message': 'Invalid purchase_date format. Expected MM-DD-YYYY.'
+                'message': str(e)
             }
             return make_response(jsonify(responseObject)), 400
         except Exception as e:
@@ -697,7 +757,7 @@ class DashboardAPI(MethodView):
                 'outbound_id': t.outbound_id,
                 'truck_number': t.truck_number,
                 'truck_date': t.truck_date.strftime('%Y-%m-%d') if t.truck_date else None,
-                'weight_in_tons': float(t.weight_in_tons),
+                'weight_in_kgs': float(t.weight_in_kgs) if t.weight_in_kgs is not None else round(float(t.weight_in_tons or 0) * 1000, 2),
                 'is_verified': t.is_verified
             } for t in recent_trucks_raw]
 
