@@ -10,7 +10,7 @@ from flaskr.schemas import PropertySchema, WorkOrderSchema,WorkRecordSchema
 from flask import send_file
 import mimetypes
 from sqlalchemy.orm import joinedload
-from sqlalchemy import func
+from sqlalchemy import func, case
 
 property_blueprint=Blueprint("property",__name__)
 CROP_TYPE_VALUES = {'subabul', 'eucalyptus', 'other'}
@@ -346,7 +346,22 @@ class PropertyAPI(MethodView):
                 if self.is_admin and not property_id:
                     properties = Property.query.all()
                     property_schema = PropertySchema(many=True)
-                    properties = (property_schema.dump(properties))   
+                    properties = (property_schema.dump(properties))
+                    completion_rows = db.session.query(
+                        WorkOrder.property_id.label('property_id'),
+                        func.count(WorkOrder.work_order_id).label('total_orders'),
+                        func.sum(case((WorkOrder.is_completed == True, 1), else_=0)).label('completed_orders'),
+                    ).group_by(WorkOrder.property_id).all()
+                    completion_map = {
+                        row.property_id: (
+                            int(row.total_orders or 0),
+                            int(row.completed_orders or 0),
+                        )
+                        for row in completion_rows
+                    }
+                    for item in properties:
+                        total_orders, completed_orders = completion_map.get(item['property_id'], (0, 0))
+                        item['all_work_orders_completed'] = bool(total_orders > 0 and total_orders == completed_orders)
                     #app.logger.info(property_list)
                     responseObject = {
                                         'status': 'success',
@@ -369,6 +384,9 @@ class PropertyAPI(MethodView):
                         work_records = work_record_schema.dump(work_records)
 
                         work_order['work_records'] = work_records
+                    property['all_work_orders_completed'] = bool(
+                        len(work_orders) > 0 and all(bool(wo.get('is_completed')) for wo in work_orders)
+                    )
                         
                     responseObject = {
                                         'status': 'success',
