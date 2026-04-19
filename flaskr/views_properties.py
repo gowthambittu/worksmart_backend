@@ -359,9 +359,39 @@ class PropertyAPI(MethodView):
                         )
                         for row in completion_rows
                     }
+
+                    active_labour_rows = (
+                        db.session.query(
+                            WorkOrder.property_id.label('property_id'),
+                            WorkOrder.user_id.label('user_id'),
+                            User.full_name.label('full_name'),
+                        )
+                        .join(User, WorkOrder.user_id == User.user_id)
+                        .filter(
+                            WorkOrder.is_completed == False,  # noqa: E712
+                            User.role == 'labour',
+                        )
+                        .all()
+                    )
+                    active_labour_map = {}
+                    seen_labour_ids = {}
+                    for row in active_labour_rows:
+                        property_id_key = row.property_id
+                        if property_id_key not in active_labour_map:
+                            active_labour_map[property_id_key] = []
+                            seen_labour_ids[property_id_key] = set()
+                        if row.user_id in seen_labour_ids[property_id_key]:
+                            continue
+                        seen_labour_ids[property_id_key].add(row.user_id)
+                        display_name = (row.full_name or '').strip() or f'User {row.user_id}'
+                        active_labour_map[property_id_key].append(display_name)
+
                     for item in properties:
                         total_orders, completed_orders = completion_map.get(item['property_id'], (0, 0))
                         item['all_work_orders_completed'] = bool(total_orders > 0 and total_orders == completed_orders)
+                        labour_names = active_labour_map.get(item['property_id'], [])
+                        item['active_labour_names'] = labour_names
+                        item['active_labour_names_display'] = ', '.join(labour_names) if labour_names else None
                     #app.logger.info(property_list)
                     responseObject = {
                                         'status': 'success',
